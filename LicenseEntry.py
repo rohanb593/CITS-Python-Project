@@ -53,39 +53,56 @@ def get_products_for_dropdown():
                 conn.close()
     return []
 
+
 def save_license(license_data, license_id=None):
     conn = get_db_connection()
     if conn:
         try:
             cursor = conn.cursor()
+
+            # Check for existing license for this customer-product combination
+            customer_id = license_data[0]
+            product_id = license_data[1]
+
+            if not license_id:  # Only check for new licenses, not updates
+                cursor.execute("""
+                               SELECT license_id
+                               FROM licenses
+                               WHERE customer_id = %s
+                                 AND product_id = %s
+                               """, (customer_id, product_id))
+                existing_license = cursor.fetchone()
+
+                if existing_license:
+                    return False, "This customer already has a license for this product. Please use the upgrade section instead."
+
             if license_id:  # Update existing
                 cursor.execute("""
                                UPDATE licenses
-                               SET customer_id = %s,
-                                   product_id = %s,
-                                   quantity = %s,
-                                   issue_date = %s,
-                                   installation_date = %s,
+                               SET customer_id            = %s,
+                                   product_id             = %s,
+                                   quantity               = %s,
+                                   issue_date             = %s,
+                                   installation_date      = %s,
                                    validity_period_months = %s,
-                                   remarks = %s
+                                   remarks                = %s
                                WHERE license_id = %s
                                """, (*license_data, license_id))
             else:  # Insert new
                 cursor.execute("""
                                INSERT INTO licenses
-                               (customer_id, product_id, quantity, issue_date, installation_date, 
+                               (customer_id, product_id, quantity, issue_date, installation_date,
                                 validity_period_months, remarks)
                                VALUES (%s, %s, %s, %s, %s, %s, %s)
                                """, license_data)
             conn.commit()
-            return True
+            return True, "License record saved successfully!"
         except Error as e:
-            st.error(f"Database error: {e}")
-            return False
+            return False, f"Database error: {e}"
         finally:
             if conn.is_connected():
                 conn.close()
-    return False
+    return False, "Could not connect to database"
 
 def delete_license(license_id):
     conn = get_db_connection()
@@ -133,6 +150,28 @@ def get_all_licenses():
                 conn.close()
     return []
 
+
+def get_customer_products(customer_id):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT DISTINCT p.product_id, p.product_name, p.default_validity_months
+                FROM licenses l
+                JOIN products p ON l.product_id = p.product_id
+                WHERE l.customer_id = %s
+                ORDER BY p.product_name
+            """, (customer_id,))
+            return cursor.fetchall()
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return []
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return []
+
 def show_license_entry():
     st.set_page_config(page_title="License Entry", layout="wide")
 
@@ -160,6 +199,7 @@ def show_license_entry():
 
     # Add new license form
     # Add new license form
+
     with st.expander("Add New License"):
         with st.form("license_form"):
             col1, col2 = st.columns(2)
@@ -206,11 +246,112 @@ def show_license_entry():
                         validity_period,
                         remarks
                     )
-                    if save_license(license_data):
-                        st.success("License record saved successfully!")
+                    success, message = save_license(license_data)
+                    if success:
+                        st.success(message)
                         st.rerun()
                     else:
-                        st.error("Error saving license record")
+                        st.error(message)
+
+    with st.expander("Upgrade License"):
+        with st.form("upgrade_license_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                # Customer dropdown
+                customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+                selected_customer = st.selectbox(
+                    "Customer*",
+                    options=["Select customer"] + list(customer_options.keys()),
+                    key="upgrade_customer_select"
+                )
+                st.rerun
+
+                # Only show products this customer already has
+                customer_products = []
+                existing_license_id = None
+                if selected_customer != "Select customer":
+                    customer_id = customer_options[selected_customer]
+                    customer_products = get_customer_products(customer_id)
+
+                    # Get the existing license ID for this customer-product combination
+                    conn = get_db_connection()
+                    if conn:
+                        try:
+                            cursor = conn.cursor(dictionary=True)
+                            cursor.execute("""
+                                           SELECT license_id
+                                           FROM licenses
+                                           WHERE customer_id = %s LIMIT 1
+                                           """, (customer_id,))
+                            result = cursor.fetchone()
+                            if result:
+                                existing_license_id = result['license_id']
+                        except Error as e:
+                            st.error(f"Database error: {e}")
+                        finally:
+                            if conn.is_connected():
+                                conn.close()
+
+                # Product dropdown
+                product_options = {f"{p['product_id']} - {p['product_name']}": p for p in customer_products}
+                selected_product = st.selectbox(
+                    "Product*",
+                    options=["Select product"] + list(product_options.keys()),
+                    key="upgrade_product_select",
+                    disabled=len(customer_products) == 0
+                )
+
+            with col2:
+                # Set default validity based on selected product
+                default_validity = 12
+                if selected_product != "Select product":
+                    product_data = product_options[selected_product]
+                    default_validity = product_data['default_validity_months']
+
+                validity_period = st.number_input(
+                    "Validity Period (months)*",
+                    min_value=1,
+                    value=default_validity,
+                    key="upgrade_validity"
+                )
+
+                quantity = st.number_input(
+                    "Quantity*",
+                    min_value=1,
+                    value=1,
+                    key="upgrade_quantity"
+                )
+
+            remarks = st.text_area(
+                "Remarks",
+                max_chars=500,
+                key="upgrade_remarks"
+            )
+
+            submitted = st.form_submit_button("Submit")
+            if submitted:
+                if selected_customer == "Select customer" or selected_product == "Select product":
+                    st.error("Please select a customer and product")
+                elif not existing_license_id:
+                    st.error("No existing license found to upgrade")
+                else:
+                    customer_id = customer_options[selected_customer]
+                    product_id = product_options[selected_product]['product_id']
+                    license_data = (
+                        customer_id,
+                        product_id,
+                        quantity,
+                        datetime.now().date(),  # Update issue date to current date
+                        None,  # No installation date for upgrades
+                        validity_period,
+                        f"Upgraded on {datetime.now().date()} - {remarks}",  # Add upgrade info to remarks
+                        existing_license_id  # The license ID to update
+                    )
+                    if save_license(license_data, existing_license_id):
+                        st.success("License upgraded successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Error upgrading license")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode
