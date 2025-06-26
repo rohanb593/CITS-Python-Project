@@ -25,12 +25,12 @@ def get_customer_products(customer_id=None):
     if conn:
         try:
             query = """
-                    SELECT c.customer_name, \
-                           p.product_name, \
-                           p.product_type, \
-                           l.quantity, \
-                           l.issue_date, \
-                           l.expiry_date, \
+                    SELECT c.customer_name,
+                           p.product_name,
+                           p.product_type,
+                           l.quantity,
+                           l.issue_date,
+                           l.expiry_date,
                            l.license_id
                     FROM licenses l
                              JOIN customers c ON l.customer_id = c.customer_id
@@ -72,6 +72,45 @@ def get_all_customers():
                 conn.close()
     return []
 
+def get_customer_count():
+    """Get total number of customers"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM customers")
+            return cursor.fetchone()[0]
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return 0
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return 0
+
+
+def get_license_stats():
+    """Get active and expired license counts"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            query = """
+                    SELECT SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END) as active, \
+                           SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END)  as expired
+                    FROM licenses \
+                    """
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query)
+            return cursor.fetchone()
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return {'active': 0, 'expired': 0}
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return {'active': 0, 'expired': 0}
+
+
 
 def show_customer_product_view():
     st.set_page_config(page_title="Customer Product View", layout="wide")
@@ -83,20 +122,52 @@ def show_customer_product_view():
     st.title("Customer Product View")
     st.markdown("---")
 
+    total_customers = int(get_customer_count())
+
+    license_stats_raw = get_license_stats()
+    license_stats = {
+        'active': int(license_stats_raw['active']),
+        'expired': int(license_stats_raw['expired']),
+    }
+
+    # Create metrics columns
+    with st.expander("📊 License Metrics", expanded=True):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                label="Total Customers",
+                value=total_customers,
+                delta="View all customers",
+                help="Total number of customers"
+            )
+
+        with col2:
+            st.metric(
+                label="Active Licenses",
+                value=license_stats['active'],
+                delta="See details",
+                help="Licenses currently in use"
+            )
+
+        with col3:
+            st.metric(
+                label="Expired Licenses",
+                value=license_stats['expired'],
+                delta="Needs attention",
+                delta_color="inverse",
+                help="Licenses requiring renewal"
+            )
+
+    # ===== LICENSE STATUS VISUALIZATION =====
+    st.markdown("---")
+
     # Get all customers for dropdown
     customers = get_all_customers()
     customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
 
-    # Customer selection
-    selected_customer = st.selectbox(
-        "Select Customer",
-        options=["All Customers"] + list(customer_options.keys()),
-        key="customer_select"
-    )
-
     # Get product data
-    customer_id = customer_options[selected_customer.split(" - ")[0]] if selected_customer != "All Customers" else None
-    products = get_customer_products(customer_id)
+    products = get_customer_products()
 
     if products:
         # Convert to DataFrame
@@ -109,23 +180,43 @@ def show_customer_product_view():
         # Get current date as date object
         current_date = datetime.now().date()
 
+        # Add status column
+        df['status'] = df['expiry_date'].apply(
+            lambda x: "Active" if x >= current_date else "Expired"
+        )
+
         # Add filtering options
-        st.subheader("Filter Products")
+        st.subheader("Filters")
         col1, col2 = st.columns(2)
 
         with col1:
-            # Product type filter
-            product_types = df['product_type'].unique()
-            selected_types = st.multiselect(
-                "Filter by Product Type",
-                options=product_types,
-                default=product_types,
-                key="type_filter"
+            # Customer filter
+            all_customers = ["All Customers"] + sorted(df['customer_name'].unique().tolist())
+            selected_customer = st.selectbox(
+                "Filter by Customer",
+                options=all_customers,
+                key="customer_filter"
+            )
+
+            # Product name filter
+            all_products = ["All Products"] + sorted(df['product_name'].unique().tolist())
+            selected_product = st.selectbox(
+                "Filter by Product Name",
+                options=all_products,
+                key="product_filter"
             )
 
         with col2:
+            # Product type filter
+            all_types = ["All Types"] + sorted(df['product_type'].unique().tolist())
+            selected_type = st.selectbox(
+                "Filter by Product Type",
+                options=all_types,
+                key="type_filter"
+            )
+
             # Status filter
-            status_options = ["Active", "Expired", "All"]
+            status_options = ["All Statuses", "Active", "Expired"]
             selected_status = st.selectbox(
                 "Filter by Status",
                 options=status_options,
@@ -133,26 +224,25 @@ def show_customer_product_view():
             )
 
         # Apply filters
-        filtered_df = df[df['product_type'].isin(selected_types)]
+        filtered_df = df.copy()
 
-        if selected_status == "Active":
-            filtered_df = filtered_df[filtered_df['expiry_date'] >= current_date]
-        elif selected_status == "Expired":
-            filtered_df = filtered_df[filtered_df['expiry_date'] < current_date]
+        if selected_customer != "All Customers":
+            filtered_df = filtered_df[filtered_df['customer_name'] == selected_customer]
+
+        if selected_product != "All Products":
+            filtered_df = filtered_df[filtered_df['product_name'] == selected_product]
+
+        if selected_type != "All Types":
+            filtered_df = filtered_df[filtered_df['product_type'] == selected_type]
+
+        if selected_status != "All Statuses":
+            filtered_df = filtered_df[filtered_df['status'] == selected_status]
 
         # Display results
         st.subheader("Customer Products")
 
-        # Format the DataFrame for display
-        display_df = filtered_df.drop(columns=['license_id'])
-
-        # Add status column
-        display_df['status'] = display_df['expiry_date'].apply(
-            lambda x: "Active" if x >= current_date else "Expired"
-        )
-
-        # Reorder columns
-        display_df = display_df[[
+        # Reorder columns for display
+        display_df = filtered_df[[
             'customer_name', 'product_name', 'product_type',
             'quantity', 'issue_date', 'expiry_date', 'status'
         ]]
@@ -167,19 +257,7 @@ def show_customer_product_view():
             }
         )
 
-        # Show summary metrics
-        st.subheader("Summary")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Products", len(filtered_df))
-        with col2:
-            active = len(filtered_df[filtered_df['expiry_date'] >= current_date])
-            st.metric("Active Licenses", active)
-        with col3:
-            expired = len(filtered_df[filtered_df['expiry_date'] < current_date])
-            st.metric("Expired Licenses", expired)
-    else:
-        st.info("No products found for selected customer")
+
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from mysql.connector import Error
+import smtplib
+from email.message import EmailMessage
 
 def get_db_connection():
     try:
@@ -109,26 +111,8 @@ def show_dashboard():
 
     # ===== LICENSE STATUS VISUALIZATION =====
     st.markdown("---")
-    st.header("📈 License Status Overview")
 
-    # Create a simple pie chart
-    license_data = pd.DataFrame({
-        'Status': ['Active', 'Expired'],
-        'Count': [license_stats['active'], license_stats['expired']]
-    })
 
-    st.bar_chart(license_data.set_index('Status'))
-
-    # ===== RECENT ACTIVITY SECTION =====
-    st.markdown("---")
-    st.header("🔄 Recent Activity")
-
-    # Placeholder for recent activity - replace with real data
-    st.write("""
-    - **5** new licenses added this week
-    - **3** renewals completed
-    - **2** customer onboarding sessions
-    """)
 
 
 if __name__ == "__main__":
