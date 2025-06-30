@@ -129,7 +129,7 @@ def show_product_master():
         return
 
     st.title("Product Master")
-    st.markdown("---")
+
 
 
 

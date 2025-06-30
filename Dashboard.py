@@ -117,7 +117,7 @@ def get_expiring_licenses():
 
 def show_license_renewal_section():
     """Display tables for expired and soon-to-expire licenses"""
-    st.markdown("---")
+
     st.subheader("License Renewal Status")
 
     licenses = get_expiring_licenses()
@@ -171,62 +171,35 @@ def show_license_renewal_section():
 
 def show_pie_charts():
     """Display two pie charts showing actual counts"""
-    st.markdown("---")
 
 
-    col1, col2 = st.columns(2)
 
-    with col1:
+
         # System Totals Pie Chart (Counts only)
 
-        totals = {
-            'Products': len(get_all_products()),
-            'Customers': get_customer_count(),
-            'Licenses': len(get_all_licenses())
-        }
+    totals = {
+        'Products': len(get_all_products()),
+        'Customers': get_customer_count(),
+        'Licenses': len(get_all_licenses())
 
-        fig1 = px.pie(
-            names=list(totals.keys()),
-            values=list(totals.values()),
-            color_discrete_sequence=px.colors.qualitative.Pastel
-        )
-        fig1.update_traces(
-            texttemplate='%{label}<br>%{value}',
-            textposition='inside',
-            hoverinfo='label+value',
-            hole=0.3,
-            textfont_size=16
-        )
-        fig1.update_layout(showlegend=False)
-        st.plotly_chart(fig1, use_container_width=True)
+    }
 
-    with col2:
-        # License Status Pie Chart (Counts only)
+    fig1 = px.pie(
+        names=list(totals.keys()),
+        values=list(totals.values()),
+        color_discrete_sequence=px.colors.qualitative.Pastel
+    )
+    fig1.update_traces(
+        texttemplate='%{label}<br>%{value}',
+        textposition='inside',
+        hoverinfo='label+value',
+        hole=0.3,
+        textfont_size=16
+    )
+    fig1.update_layout(showlegend=False)
+    st.plotly_chart(fig1, use_container_width=True)
 
-        stats = get_license_stats()
-        status_data = {
-            'Active': stats['active'],
-            'Expired': stats['expired']
-        }
 
-        fig2 = px.pie(
-            names=list(status_data.keys()),
-            values=list(status_data.values()),
-            color=list(status_data.keys()),
-            color_discrete_map={
-                'Active': '#2ecc71',  # Green
-                'Expired': '#e74c3c'  # Red
-            }
-        )
-        fig2.update_traces(
-            texttemplate='%{label}<br>%{value}',
-            textposition='inside',
-            hoverinfo='label+value',
-            hole=0.3,
-            textfont_size=16
-        )
-        fig2.update_layout(showlegend=False)
-        st.plotly_chart(fig2, use_container_width=True)
 
 
 # Add these helper functions if not already present
@@ -269,7 +242,7 @@ def show_dashboard():
         return
 
     st.title("Corporate IT Solutions Dashboard")
-    st.markdown("---")
+
 
 
 
@@ -282,40 +255,44 @@ def show_dashboard():
         'active': int(license_stats_raw['active']),
         'expired': int(license_stats_raw['expired']),
     }
+    with st.expander("📊 License Metrics", expanded=True):
+        col1, col2, col3 = st.columns(3)
 
-    # Create metrics columns
-    col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                label="Total Customers",
+                value=total_customers,
+                delta="View all customers",
+                help="Total number of customers"
+            )
 
-    with col1:
-        st.metric(
-            label="Total Customers",
-            value=total_customers,
-            delta="View all customers",
-            help="Total number of customers"
+        with col2:
+            st.metric(
+                label="Active Licenses",
+                value=license_stats['active'],
+                delta="See details",
+                help="Licenses currently in use"
+            )
 
-        )
+        with col3:
+            st.metric(
+                label="Expired Licenses",
+                value=license_stats['expired'],
+                delta="Needs attention",
+                delta_color="inverse",
+                help="Licenses requiring renewal"
+            )
 
-    with col2:
-        st.metric(
-            label="Active Licenses",
-            value=license_stats['active'],
-            delta="See details",
-            help="Licenses currently in use"
-        )
-
-    with col3:
-        st.metric(
-            label="Expired Licenses",
-            value=license_stats['expired'],
-            delta="Needs attention",
-            delta_color="inverse",
-            help="Licenses requiring renewal"
-        )
 
     # ===== LICENSE STATUS VISUALIZATION =====
+    col1, col2 = st.columns([6,2])
 
-    show_pie_charts()
-    show_license_renewal_section()
+    with col1:
+        show_license_renewal_section()
+
+    with col2:
+
+        show_pie_charts()
 
 
 

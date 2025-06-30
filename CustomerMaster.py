@@ -133,7 +133,7 @@ def show_customer_master():
         return
 
     st.title("Customer Master")
-    st.markdown("---")
+
 
     total_customers = int(get_customer_count())
 

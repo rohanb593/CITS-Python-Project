@@ -255,7 +255,7 @@ def show_license_entry():
         return
 
     st.title("License Master")
-    st.markdown("---")
+
 
     total_customers = int(get_customer_count())
 

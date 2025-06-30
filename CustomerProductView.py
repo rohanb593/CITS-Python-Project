@@ -120,7 +120,7 @@ def show_customer_product_view():
         return
 
     st.title("Customer Product View")
-    st.markdown("---")
+
 
     total_customers = int(get_customer_count())
 
@@ -160,7 +160,7 @@ def show_customer_product_view():
             )
 
     # ===== LICENSE STATUS VISUALIZATION =====
-    st.markdown("---")
+
 
     # Get all customers for dropdown
     customers = get_all_customers()
