@@ -106,26 +106,28 @@ def show_product_master():
     # Toggle switch for edit mode
     edit_mode = st.toggle("Edit Mode", value=st.session_state.edit_mode, key="edit_toggle")
 
-    with st.expander("Add New Product"):
-        with st.form("add_product_form"):
-            product_name = st.text_input("Product Name*", max_chars=100)
-            col1, col2 = st.columns(2)
-            with col1:
-                product_type = st.selectbox("Product Type*", ["Software", "OS", "Hardware"])
-                license_unit = st.selectbox("License Unit*", ["User", "Device"])
-            with col2:
-                validity = st.number_input("Default Validity (months)*", min_value=1, max_value=120, value=12)
+    if not st.session_state.edit_mode:
 
-            if st.form_submit_button("Add Product"):
-                if not product_name:
-                    st.error("Please fill all required fields (*)")
-                else:
-                    product_data = (product_name, product_type, license_unit, validity)
-                    if save_product(product_data):
-                        st.success("Product added successfully!")
-                        st.rerun()
+        with st.expander("Add New Product"):
+            with st.form("add_product_form"):
+                product_name = st.text_input("Product Name*", max_chars=100)
+                col1, col2 = st.columns(2)
+                with col1:
+                    product_type = st.selectbox("Product Type*", ["Software", "OS", "Hardware"])
+                    license_unit = st.selectbox("License Unit*", ["User", "Device"])
+                with col2:
+                    validity = st.number_input("Default Validity (months)*", min_value=1, max_value=120, value=12)
+
+                if st.form_submit_button("Add Product"):
+                    if not product_name:
+                        st.error("Please fill all required fields (*)")
                     else:
-                        st.error("Error adding product")
+                        product_data = (product_name, product_type, license_unit, validity)
+                        if save_product(product_data):
+                            st.success("Product added successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Error adding product")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode

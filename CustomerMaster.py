@@ -111,27 +111,28 @@ def show_customer_master():
     edit_mode = st.toggle("Edit Mode", value=st.session_state.edit_mode, key="edit_toggle")
 
     # Add new customer form (always visible)
-    with st.expander("Add New Customer"):
-        with st.form("add_customer_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                customer_name = st.text_input("Customer Name*", max_chars=100)
-                contact_person = st.text_input("Contact Person*", max_chars=100)
-                email = st.text_input("Email*", max_chars=100)
-            with col2:
-                phone = st.text_input("Phone*", max_chars=20)
-                location = st.text_input("Location*", max_chars=100)
+    if not st.session_state.edit_mode:
+        with st.expander("Add New Customer"):
+            with st.form("add_customer_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    customer_name = st.text_input("Customer Name*", max_chars=100)
+                    contact_person = st.text_input("Contact Person*", max_chars=100)
+                    email = st.text_input("Email*", max_chars=100)
+                with col2:
+                    phone = st.text_input("Phone*", max_chars=20)
+                    location = st.text_input("Location*", max_chars=100)
 
-            if st.form_submit_button("Add Customer"):
-                if not all([customer_name, contact_person, email, phone, location]):
-                    st.error("Please fill all required fields (*)")
-                else:
-                    customer_data = (customer_name, contact_person, email, phone, location)
-                    if save_customer(customer_data):
-                        st.success("Customer added successfully!")
-                        st.rerun()
+                if st.form_submit_button("Add Customer"):
+                    if not all([customer_name, contact_person, email, phone, location]):
+                        st.error("Please fill all required fields (*)")
                     else:
-                        st.error("Error adding customer")
+                        customer_data = (customer_name, contact_person, email, phone, location)
+                        if save_customer(customer_data):
+                            st.success("Customer added successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Error adding customer")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode

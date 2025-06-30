@@ -238,167 +238,169 @@ def show_license_entry():
     edit_mode = st.toggle("Edit Mode", value=st.session_state.edit_mode, key="edit_toggle")
 
     # Add new license form
-    with st.expander("Add New License"):
-        with st.form("license_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                # Customer dropdown
-                customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
-                selected_customer = st.selectbox("Customer*",
-                                                 options=["Select customer"] + list(customer_options.keys()))
 
-                # Product dropdown
-                product_options = {f"{p['product_id']} - {p['product_name']}": p for p in products}
-                selected_product = st.selectbox("Product*", options=["Select product"] + list(product_options.keys()))
+    if not st.session_state.edit_mode:
+        with st.expander("Add New License"):
+            with st.form("license_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Customer dropdown
+                    customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+                    selected_customer = st.selectbox("Customer*",
+                                                     options=["Select customer"] + list(customer_options.keys()))
 
-                quantity = st.number_input("Quantity*", min_value=1, value=1)
+                    # Product dropdown
+                    product_options = {f"{p['product_id']} - {p['product_name']}": p for p in products}
+                    selected_product = st.selectbox("Product*", options=["Select product"] + list(product_options.keys()))
 
-            with col2:
-                issue_date = st.date_input("Issue Date*", datetime.now())
-                installation_date = st.date_input("Installation Date")
+                    quantity = st.number_input("Quantity*", min_value=1, value=1)
 
-                # Set default validity based on selected product
-                default_validity = 12
-                if selected_product != "Select product":
-                    product_data = product_options[selected_product]
-                    default_validity = product_data['default_validity_months']
+                with col2:
+                    issue_date = st.date_input("Issue Date*", datetime.now())
+                    installation_date = st.date_input("Installation Date")
 
-                validity_period = st.number_input("Validity Period (months)*",
-                                                  min_value=1, value=default_validity)
+                    # Set default validity based on selected product
+                    default_validity = 12
+                    if selected_product != "Select product":
+                        product_data = product_options[selected_product]
+                        default_validity = product_data['default_validity_months']
 
-            remarks = st.text_area("Remarks", max_chars=500)
+                    validity_period = st.number_input("Validity Period (months)*",
+                                                      min_value=1, value=default_validity)
 
-            submitted = st.form_submit_button("Submit")
-            if submitted:
-                if selected_customer == "Select customer" or selected_product == "Select product":
-                    st.error("Please select a customer and product")
-                else:
-                    customer_id = customer_options[selected_customer]
-                    product_id = product_options[selected_product]['product_id']
-                    license_data = (
-                        customer_id,
-                        product_id,
-                        quantity,
-                        issue_date,
-                        installation_date if installation_date else None,
-                        validity_period,
-                        remarks
-                    )
-                    success, message = save_license(license_data)
-                    if success:
-                        st.success(message)
-                        st.rerun()
+                remarks = st.text_area("Remarks", max_chars=500)
+
+                submitted = st.form_submit_button("Submit")
+                if submitted:
+                    if selected_customer == "Select customer" or selected_product == "Select product":
+                        st.error("Please select a customer and product")
                     else:
-                        st.error(message)
+                        customer_id = customer_options[selected_customer]
+                        product_id = product_options[selected_product]['product_id']
+                        license_data = (
+                            customer_id,
+                            product_id,
+                            quantity,
+                            issue_date,
+                            installation_date if installation_date else None,
+                            validity_period,
+                            remarks
+                        )
+                        success, message = save_license(license_data)
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
 
-    with st.expander("Upgrade License"):
-        customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
-        selected_customer = st.selectbox(
-            "Select Customer",
-            options=["Select a customer"] + list(customer_options.keys()),
-            key="upgrade_customer_select"
-        )
+        with st.expander("Upgrade License"):
+            customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+            selected_customer = st.selectbox(
+                "Select Customer",
+                options=["Select a customer"] + list(customer_options.keys()),
+                key="upgrade_customer_select"
+            )
 
-        if selected_customer != "Select a customer":
-            customer_id = customer_options[selected_customer]
-            st.session_state.selected_customer_id = customer_id
+            if selected_customer != "Select a customer":
+                customer_id = customer_options[selected_customer]
+                st.session_state.selected_customer_id = customer_id
 
-            # Get licenses for selected customer
-            customer_licenses = get_licenses_by_customer(customer_id)
+                # Get licenses for selected customer
+                customer_licenses = get_licenses_by_customer(customer_id)
 
-            if customer_licenses:
-                # License selection dropdown
-                license_options = {
-                    f"{l['license_id']} - {l['product_name']} (Issued: {l['issue_date']})": l
-                    for l in customer_licenses
-                }
-                selected_license = st.selectbox(
-                    "Select License to Upgrade",
-                    options=["Select a license"] + list(license_options.keys()),
-                    key="upgrade_license_select"
-                )
+                if customer_licenses:
+                    # License selection dropdown
+                    license_options = {
+                        f"{l['license_id']} - {l['product_name']} (Issued: {l['issue_date']})": l
+                        for l in customer_licenses
+                    }
+                    selected_license = st.selectbox(
+                        "Select License to Upgrade",
+                        options=["Select a license"] + list(license_options.keys()),
+                        key="upgrade_license_select"
+                    )
 
-                if selected_license != "Select a license":
-                    selected_license_data = license_options[selected_license]
-                    if st.session_state.selected_license != selected_license_data:
-                        st.session_state.selected_license = selected_license_data
-                        st.rerun()
+                    if selected_license != "Select a license":
+                        selected_license_data = license_options[selected_license]
+                        if st.session_state.selected_license != selected_license_data:
+                            st.session_state.selected_license = selected_license_data
+                            st.rerun()
 
-                    # Upgrade form
-                    with st.form("upgrade_license_form"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.text_input(
-                                "License ID",
-                                value=st.session_state.selected_license['license_id'],
-                                disabled=True
-                            )
-                            st.text_input(
-                                "Customer",
-                                value=selected_customer.split(" - ")[1],
-                                disabled=True
-                            )
-                            st.text_input(
-                                "Product",
-                                value=selected_license.split(" - ")[1],
-                                disabled=True
-                            )
-                            quantity = st.number_input(
-                                "Quantity*",
-                                min_value=1,
-                                value=st.session_state.selected_license['quantity']
-                            )
+                        # Upgrade form
+                        with st.form("upgrade_license_form"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.text_input(
+                                    "License ID",
+                                    value=st.session_state.selected_license['license_id'],
+                                    disabled=True
+                                )
+                                st.text_input(
+                                    "Customer",
+                                    value=selected_customer.split(" - ")[1],
+                                    disabled=True
+                                )
+                                st.text_input(
+                                    "Product",
+                                    value=selected_license.split(" - ")[1],
+                                    disabled=True
+                                )
+                                quantity = st.number_input(
+                                    "Quantity*",
+                                    min_value=1,
+                                    value=st.session_state.selected_license['quantity']
+                                )
 
-                        with col2:
-                            validity_period = st.number_input(
-                                "Validity Period (months)*",
-                                min_value=1,
-                                value=st.session_state.selected_license['validity_period_months']
-                            )
-                            remarks = st.text_area(
-                                "Remarks",
-                                value=f"Upgraded on {datetime.now().date()} - {st.session_state.selected_license['remarks']}",
-                                max_chars=500
-                            )
+                            with col2:
+                                validity_period = st.number_input(
+                                    "Validity Period (months)*",
+                                    min_value=1,
+                                    value=st.session_state.selected_license['validity_period_months']
+                                )
+                                remarks = st.text_area(
+                                    "Remarks",
+                                    value=f"Upgraded on {datetime.now().date()} - {st.session_state.selected_license['remarks']}",
+                                    max_chars=500
+                                )
 
-                        if st.form_submit_button("Submit Upgrade"):
-                            # Use product ID from selected license instead of dropdown
-                            product_id = st.session_state.selected_license['product_id']
+                            if st.form_submit_button("Submit Upgrade"):
+                                # Use product ID from selected license instead of dropdown
+                                product_id = st.session_state.selected_license['product_id']
 
-                            # Get existing issue date from selected license
-                            issue_date = st.session_state.selected_license['issue_date']
+                                # Get existing issue date from selected license
+                                issue_date = st.session_state.selected_license['issue_date']
 
-                            # Get existing installation date from selected license
-                            installation_date = st.session_state.selected_license['installation_date']
+                                # Get existing installation date from selected license
+                                installation_date = st.session_state.selected_license['installation_date']
 
-                            license_data = (
-                                st.session_state.selected_customer_id,
-                                product_id,
-                                quantity,
-                                issue_date,
-                                installation_date,
-                                validity_period,
-                                remarks
-                            )
+                                license_data = (
+                                    st.session_state.selected_customer_id,
+                                    product_id,
+                                    quantity,
+                                    issue_date,
+                                    installation_date,
+                                    validity_period,
+                                    remarks
+                                )
 
-                            success, message = save_license(
-                                license_data,
-                                st.session_state.selected_license['license_id']
-                            )
+                                success, message = save_license(
+                                    license_data,
+                                    st.session_state.selected_license['license_id']
+                                )
 
-                            if success:
-                                st.success("License updated successfully!")
-                                st.session_state.selected_license = None
-                                st.rerun()
-                            else:
-                                st.error(message)
+                                if success:
+                                    st.success("License updated successfully!")
+                                    st.session_state.selected_license = None
+                                    st.rerun()
+                                else:
+                                    st.error(message)
 
 
 
+                    else:
+                        st.info("Please select a license to upgrade")
                 else:
-                    st.info("Please select a license to upgrade")
-            else:
-                st.info("This customer has no licenses to upgrade")
+                    st.info("This customer has no licenses to upgrade")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode
