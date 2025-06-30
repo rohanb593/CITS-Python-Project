@@ -85,7 +85,43 @@ def delete_customer(customer_id):
                 conn.close()
     return False
 
+def get_customer_count():
+    """Get total number of customers"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM customers")
+            return cursor.fetchone()[0]
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return 0
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return 0
 
+
+def get_license_stats():
+    """Get active and expired license counts"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            query = """
+                    SELECT SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END) as active, \
+                           SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END)  as expired
+                    FROM licenses \
+                    """
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query)
+            return cursor.fetchone()
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return {'active': 0, 'expired': 0}
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return {'active': 0, 'expired': 0}
 
 
 
@@ -98,6 +134,41 @@ def show_customer_master():
 
     st.title("Customer Master")
     st.markdown("---")
+
+    total_customers = int(get_customer_count())
+
+    license_stats_raw = get_license_stats()
+    license_stats = {
+        'active': int(license_stats_raw['active']),
+        'expired': int(license_stats_raw['expired']),
+    }
+    with st.expander("📊 License Metrics", expanded=True):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                label="Total Customers",
+                value=total_customers,
+                delta="View all customers",
+                help="Total number of customers"
+            )
+
+        with col2:
+            st.metric(
+                label="Active Licenses",
+                value=license_stats['active'],
+                delta="See details",
+                help="Licenses currently in use"
+            )
+
+        with col3:
+            st.metric(
+                label="Expired Licenses",
+                value=license_stats['expired'],
+                delta="Needs attention",
+                delta_color="inverse",
+                help="Licenses requiring renewal"
+            )
 
     # Initialize session state
     if 'edit_mode' not in st.session_state:
