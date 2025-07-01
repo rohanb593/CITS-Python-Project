@@ -6,6 +6,7 @@ from LicenseEntry import show_license_entry
 from Dashboard import show_dashboard
 import mysql.connector
 from mysql.connector import Error
+import pandas as pd
 
 
 # --- DB CONNECTION ---

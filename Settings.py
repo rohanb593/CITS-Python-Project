@@ -41,6 +41,8 @@ def update_password(username, current_password, new_password):
             return False
         finally:
             conn.close()
+    return None
+
 
 # --- Delete account ---
 def delete_account(username, password):
@@ -59,6 +61,8 @@ def delete_account(username, password):
             return False
         finally:
             conn.close()
+    return None
+
 
 # --- MAIN SETTINGS PAGE ---
 def show_settings():

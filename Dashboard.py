@@ -171,17 +171,15 @@ def show_license_renewal_section():
 
 def show_pie_charts():
     """Display two pie charts showing actual counts"""
+    # Get license stats
+    license_stats = get_license_stats()
 
-
-
-
-        # System Totals Pie Chart (Counts only)
-
+    # System Totals Pie Chart (Counts only)
     totals = {
         'Products': len(get_all_products()),
         'Customers': get_customer_count(),
-        'Licenses': len(get_all_licenses())
-
+        'Active Licenses': license_stats['active'],
+        'Expired Licenses': license_stats['expired']
     }
 
     fig1 = px.pie(
@@ -196,7 +194,10 @@ def show_pie_charts():
         hole=0.3,
         textfont_size=16
     )
-    fig1.update_layout(showlegend=False)
+    fig1.update_layout(
+        showlegend=False,
+
+    )
     st.plotly_chart(fig1, use_container_width=True)
 
 

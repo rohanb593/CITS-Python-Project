@@ -37,6 +37,22 @@ def get_all_customers():
     return []
 
 
+def is_customer_exists(customer_name):
+    """Check if a customer with the same name already exists"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM customers WHERE customer_name = %s", (customer_name,))
+            return cursor.fetchone()[0] > 0
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return True  # Assume exists to prevent duplicates on error
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return True  # Assume exists if connection fails
+
 def save_customer(customer_data, customer_id=None):
     conn = get_db_connection()
     if conn:
@@ -53,6 +69,11 @@ def save_customer(customer_data, customer_id=None):
                                WHERE customer_id = %s
                                """, (*customer_data, customer_id))
             else:  # Insert new
+                # First check if customer with same name exists
+                if is_customer_exists(customer_data[0]):
+                    st.error("A customer with this name already exists")
+                    return False
+
                 cursor.execute("""
                                INSERT INTO customers (customer_name, contact_person, email, phone, location)
                                VALUES (%s, %s, %s, %s, %s)
@@ -203,7 +224,7 @@ def show_customer_master():
                             st.success("Customer added successfully!")
                             st.rerun()
                         else:
-                            st.error("Error adding customer")
+                            st.error("Error adding customer - customer name may already exist")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode

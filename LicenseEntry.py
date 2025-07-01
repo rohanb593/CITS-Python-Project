@@ -247,6 +247,12 @@ def get_license_stats():
                 conn.close()
     return {'active': 0, 'expired': 0}
 
+
+def calculate_expiry_date(issue_date, validity_months):
+    """Calculate expiry date based on issue date and validity period"""
+    from dateutil.relativedelta import relativedelta
+    return issue_date + relativedelta(months=+validity_months)
+
 def show_license_entry():
     st.set_page_config(page_title="License Entry", layout="wide")
 
@@ -317,13 +323,15 @@ def show_license_entry():
                 col1, col2 = st.columns(2)
                 with col1:
                     # Customer dropdown
-                    customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+                    customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in
+                                        customers}
                     selected_customer = st.selectbox("Customer*",
                                                      options=["Select customer"] + list(customer_options.keys()))
 
                     # Product dropdown
                     product_options = {f"{p['product_id']} - {p['product_name']}": p for p in products}
-                    selected_product = st.selectbox("Product*", options=["Select product"] + list(product_options.keys()))
+                    selected_product = st.selectbox("Product*",
+                                                    options=["Select product"] + list(product_options.keys()))
 
                     quantity = st.number_input("Quantity*", min_value=1, value=1)
 
@@ -339,6 +347,11 @@ def show_license_entry():
 
                     validity_period = st.number_input("Validity Period (months)*",
                                                       min_value=1, value=default_validity)
+
+                    # Calculate and display expiry date
+                    if selected_product != "Select product" and issue_date:
+                        expiry_date = calculate_expiry_date(issue_date, validity_period)
+                        st.text(f"Renewal Date: {expiry_date.strftime('%Y-%m-%d')}")
 
                 remarks = st.text_area("Remarks", max_chars=500)
 
@@ -424,11 +437,24 @@ def show_license_entry():
                                 )
 
                             with col2:
+                                # Get existing issue date from selected license
+                                issue_date = st.session_state.selected_license['issue_date']
+                                st.date_input(
+                                    "Issue Date",
+                                    value=issue_date,
+                                    disabled=True
+                                )
+
                                 validity_period = st.number_input(
                                     "Validity Period (months)*",
                                     min_value=1,
                                     value=st.session_state.selected_license['validity_period_months']
                                 )
+
+                                # Calculate and display expiry date
+                                expiry_date = calculate_expiry_date(issue_date, validity_period)
+                                st.text(f"Renewal Date: {expiry_date.strftime('%Y-%m-%d')}")
+
                                 remarks = st.text_area(
                                     "Remarks",
                                     value=f"Upgraded on {datetime.now().date()} - {st.session_state.selected_license['remarks']}",
@@ -438,9 +464,6 @@ def show_license_entry():
                             if st.form_submit_button("Submit Upgrade"):
                                 # Use product ID from selected license instead of dropdown
                                 product_id = st.session_state.selected_license['product_id']
-
-                                # Get existing issue date from selected license
-                                issue_date = st.session_state.selected_license['issue_date']
 
                                 # Get existing installation date from selected license
                                 installation_date = st.session_state.selected_license['installation_date']
