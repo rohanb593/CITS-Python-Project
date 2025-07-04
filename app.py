@@ -205,7 +205,8 @@ def main():
         "Product Master",
         "License Master",
         "Customer Product View",
-        "Settings"
+        "Settings",
+        "test"
     ])
 
     st.sidebar.divider()
@@ -232,7 +233,9 @@ def main():
     elif page == "Settings":
         from Settings import show_settings
         show_settings()
-
+    elif page == "test":
+        from test import show_test
+        show_test()
 
 def show_login():
     st.title("🔐 Corporate IT Solutions Login")

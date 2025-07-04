@@ -344,18 +344,30 @@ def show_customer_master():
             # View mode - show interactive table
             st.subheader("Customer List")
 
-            # Convert to DataFrame
+
+
+            # Convert to DataFrame and rename columns for display
+            display_columns = {
+                'customer_name': 'Customer',
+                'contact_person': 'Contact Person',
+                'email': 'Email',
+                'phone': 'Phone',
+                'location': 'Location'
+            }
+
+            # Create display DataFrame with renamed columns but keep original data with IDs
             df = pd.DataFrame(customers)
+            display_df = df.rename(columns=display_columns)[list(display_columns.values())]
 
             # Configure AgGrid for display
-            gb = GridOptionsBuilder.from_dataframe(df)
+            gb = GridOptionsBuilder.from_dataframe(display_df)
             gb.configure_default_column(editable=False)
             gb.configure_selection('single')
             grid_options = gb.build()
 
             # Display the grid
             grid_response = AgGrid(
-                df,
+                display_df,
                 gridOptions=grid_options,
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
                 fit_columns_on_grid_load=True,

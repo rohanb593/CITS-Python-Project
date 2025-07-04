@@ -243,8 +243,13 @@ def show_customer_product_view():
 
         # Reorder columns for display
         display_df = filtered_df[[
-            'customer_name', 'product_name', 'product_type',
-            'quantity', 'issue_date', 'expiry_date', 'status'
+            'customer_name',
+            'product_name',
+            'product_type',
+            'quantity',
+            'issue_date',
+            'expiry_date',
+            'status'
         ]]
 
         st.dataframe(

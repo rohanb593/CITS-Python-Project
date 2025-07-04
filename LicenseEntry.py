@@ -409,9 +409,17 @@ def show_license_entry():
                         selected_license_data = license_options[selected_license]
                         if st.session_state.selected_license != selected_license_data:
                             st.session_state.selected_license = selected_license_data
+                            st.session_state.validity_period = selected_license_data['validity_period_months']
                             st.rerun()
 
-                        # Upgrade form
+                        # Initialize or update expiry date
+                        issue_date = st.session_state.selected_license['issue_date']
+                        current_validity = st.session_state.get('validity_period',
+                                                                st.session_state.selected_license[
+                                                                    'validity_period_months'])
+                        current_expiry = calculate_expiry_date(issue_date, current_validity)
+
+                        # Display the form
                         with st.form("upgrade_license_form"):
                             col1, col2 = st.columns(2)
                             with col1:
@@ -437,23 +445,24 @@ def show_license_entry():
                                 )
 
                             with col2:
-                                # Get existing issue date from selected license
-                                issue_date = st.session_state.selected_license['issue_date']
                                 st.date_input(
                                     "Issue Date",
                                     value=issue_date,
                                     disabled=True
                                 )
 
+                                # Validity period input - will update session state on change
                                 validity_period = st.number_input(
                                     "Validity Period (months)*",
                                     min_value=1,
-                                    value=st.session_state.selected_license['validity_period_months']
+                                    value=st.session_state.get('validity_period',
+                                                               st.session_state.selected_license[
+                                                                   'validity_period_months']),
+                                    key="validity_input"
                                 )
 
-                                # Calculate and display expiry date
-                                expiry_date = calculate_expiry_date(issue_date, validity_period)
-                                st.text(f"Renewal Date: {expiry_date.strftime('%Y-%m-%d')}")
+                                # Display current expiry date
+                                st.text(f"Renewal Date: {current_expiry.strftime('%Y-%m-%d')}")
 
                                 remarks = st.text_area(
                                     "Remarks",
@@ -461,39 +470,40 @@ def show_license_entry():
                                     max_chars=500
                                 )
 
-                            if st.form_submit_button("Submit Upgrade"):
-                                # Use product ID from selected license instead of dropdown
-                                product_id = st.session_state.selected_license['product_id']
+                            submit_button = st.form_submit_button("Submit Upgrade")
 
-                                # Get existing installation date from selected license
-                                installation_date = st.session_state.selected_license['installation_date']
+                        # Update validity period in session state when changed
+                        if validity_period != st.session_state.get('validity_period'):
+                            st.session_state.validity_period = validity_period
+                            st.rerun()
 
-                                license_data = (
-                                    st.session_state.selected_customer_id,
-                                    product_id,
-                                    quantity,
-                                    issue_date,
-                                    installation_date,
-                                    validity_period,
-                                    remarks
-                                )
+                        if submit_button:
+                            # Use product ID from selected license
+                            product_id = st.session_state.selected_license['product_id']
+                            installation_date = st.session_state.selected_license['installation_date']
 
-                                success, message = save_license(
-                                    license_data,
-                                    st.session_state.selected_license['license_id']
-                                )
+                            license_data = (
+                                st.session_state.selected_customer_id,
+                                product_id,
+                                quantity,
+                                issue_date,
+                                installation_date,
+                                validity_period,
+                                remarks
+                            )
 
-                                if success:
-                                    st.success("License updated successfully!")
-                                    st.session_state.selected_license = None
-                                    st.rerun()
-                                else:
-                                    st.error(message)
+                            success, message = save_license(
+                                license_data,
+                                st.session_state.selected_license['license_id']
+                            )
 
-
-
-                    else:
-                        st.info("Please select a license to upgrade")
+                            if success:
+                                st.success("License updated successfully!")
+                                st.session_state.selected_license = None
+                                st.session_state.validity_period = None
+                                st.rerun()
+                            else:
+                                st.error(message)
                 else:
                     st.info("This customer has no licenses to upgrade")
 
