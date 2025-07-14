@@ -253,6 +253,48 @@ def calculate_expiry_date(issue_date, validity_months):
     from dateutil.relativedelta import relativedelta
     return issue_date + relativedelta(months=+validity_months)
 
+def insert_renewal(renewal_data):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            query = """
+                INSERT INTO renewals 
+                (license_id, customer_id, product_id, total_quantity, renewal_due_date, renewal_amount, 
+                 status, invoice_no, client_confirmation_status, remarks, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            """
+            cursor.execute(query, renewal_data)
+            conn.commit()
+            return True, "Renewal record created successfully!"
+        except Error as e:
+            return False, f"Database error: {e}"
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return False, "Could not connect to database"
+
+def get_renewals_by_license(license_id):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT * 
+                FROM renewals 
+                WHERE license_id = %s
+                ORDER BY renewal_due_date DESC
+            """, (license_id,))
+            return cursor.fetchall()
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return []
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return []
+
+
 def show_license_entry():
     st.set_page_config(page_title="License Entry", layout="wide")
 
@@ -506,6 +548,107 @@ def show_license_entry():
                                 st.error(message)
                 else:
                     st.info("This customer has no licenses to upgrade")
+        with st.expander("Renew License"):
+            customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+            selected_customer = st.selectbox(
+                "Select Customer",
+                options=["Select a customer"] + list(customer_options.keys()),
+                key="renew_customer_select"
+            )
+
+            if selected_customer != "Select a customer":
+                customer_id = customer_options[selected_customer]
+                st.session_state.selected_customer_id = customer_id
+
+                # Get licenses for selected customer
+                customer_licenses = get_licenses_by_customer(customer_id)
+
+                if customer_licenses:
+                    # License selection dropdown
+                    license_options = {
+                        f"{l['license_id']} - {l['product_name']} (Exp: {l['expiry_date']})": l
+                        for l in customer_licenses
+                    }
+                    selected_license = st.selectbox(
+                        "Select License to Renew",
+                        options=["Select a license"] + list(license_options.keys()),
+                        key="renew_license_select"
+                    )
+
+                    if selected_license != "Select a license":
+                        selected_license_data = license_options[selected_license]
+
+                        # Show renewal form
+                        with st.form("renew_license_form"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.text_input("License ID", value=selected_license_data['license_id'], disabled=True)
+                                st.text_input("Customer", value=selected_customer.split(" - ")[1], disabled=True)
+                                st.text_input("Product", value=selected_license_data['product_name'], disabled=True)
+                                total_quantity = st.number_input(
+                                    "Total Quantity*",
+                                    min_value=1,
+                                    value=selected_license_data['quantity']
+                                )
+
+                            with col2:
+                                renewal_due_date = st.date_input("Renewal Due Date*", datetime.now().date())
+                                renewal_amount = st.number_input("Renewal Amount*", min_value=0.0, format="%.2f")
+                                status = st.selectbox(
+                                    "Status*",
+                                    options=["Pending", "Paid", "Overdue", "Cancelled", "Draft"],
+                                    index=0
+                                )
+
+                            invoice_no = st.text_input("Invoice Number")
+                            client_confirmation_status = st.selectbox(
+                                "Client Confirmation",
+                                options=["Pending", "Confirmed", "Not Confirmed"],
+                                index=0
+                            )
+                            remarks = st.text_area("Remarks", max_chars=500)
+
+                            submitted = st.form_submit_button("Submit Renewal")
+                            if submitted:
+                                renewal_data = (
+                                    selected_license_data['license_id'],
+                                    customer_id,
+                                    selected_license_data['product_id'],
+                                    total_quantity,
+                                    renewal_due_date,
+                                    renewal_amount,
+                                    status,
+                                    invoice_no,
+                                    client_confirmation_status,
+                                    remarks
+                                )
+                                success, message = insert_renewal(renewal_data)
+                                if success:
+                                    st.success(message)
+                                else:
+                                    st.error(message)
+
+                        # Show previous renewals for this license
+                        st.subheader("Renewal History")
+                        renewals = get_renewals_by_license(selected_license_data['license_id'])
+                        if renewals:
+                            # Convert to DataFrame for display
+                            renewals_df = pd.DataFrame(renewals)
+                            # Format dates and remove unnecessary columns
+                            renewals_df['renewal_due_date'] = pd.to_datetime(renewals_df['renewal_due_date']).dt.date
+                            renewals_df['created_at'] = pd.to_datetime(renewals_df['created_at']).dt.strftime(
+                                '%Y-%m-%d %H:%M')
+                            renewals_df['updated_at'] = pd.to_datetime(renewals_df['updated_at']).dt.strftime(
+                                '%Y-%m-%d %H:%M')
+
+                            # Display in table
+                            st.dataframe(renewals_df[['renewal_id', 'total_quantity', 'renewal_due_date',
+                                                      'renewal_amount', 'status', 'invoice_no',
+                                                      'client_confirmation_status', 'remarks', 'created_at']])
+                        else:
+                            st.info("No previous renewals found for this license")
+                else:
+                    st.info("This customer has no licenses to renew")
 
     if edit_mode != st.session_state.edit_mode:
         st.session_state.edit_mode = edit_mode
@@ -679,34 +822,27 @@ def show_license_entry():
             # View mode - show interactive table
             st.subheader("Existing Licenses")
 
-            # Convert to DataFrame for display (excluding internal IDs)
             display_licenses = [{
-                'License ID': l['license_id'],
                 'Customer': l['customer_name'],
                 'Product': l['product_name'],
                 'Quantity': l['quantity'],
-                'Issue Date': l['issue_date'],
                 'Installation Date': l['installation_date'],
+                'Issue Date': l['issue_date'],
+                'Validity Period': l['validity_period_months'],
                 'Expiry Date': l['expiry_date'],
                 'Remarks': l['remarks']
             } for l in licenses]
 
             df = pd.DataFrame(display_licenses)
+            # Format the date columns to remove time
+            df['Installation Date'] = pd.to_datetime(df['Installation Date']).dt.strftime('%Y-%m-%d')
+            df['Issue Date'] = pd.to_datetime(df['Issue Date']).dt.strftime('%Y-%m-%d')
+            df['Expiry Date'] = pd.to_datetime(df['Expiry Date']).dt.strftime('%Y-%m-%d')
 
-            # Configure AgGrid for display
-            gb = GridOptionsBuilder.from_dataframe(df)
-            gb.configure_default_column(editable=False)
-            gb.configure_selection('single')
-            grid_options = gb.build()
+            # Display DataFrame without the index
+            st.dataframe(df, hide_index=True)
 
-            # Display the grid
-            grid_response = AgGrid(
-                df,
-                gridOptions=grid_options,
-                update_mode=GridUpdateMode.SELECTION_CHANGED,
-                fit_columns_on_grid_load=True,
-                height=400
-            )
+
     else:
         st.info("No licenses found in the database")
 

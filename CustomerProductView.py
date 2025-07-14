@@ -239,9 +239,12 @@ def show_customer_product_view():
             filtered_df = filtered_df[filtered_df['status'] == selected_status]
 
         # Display results
+        # ... existing code ...
+
+        # Display results
         st.subheader("Customer Products")
 
-        # Reorder columns for display
+        # Reorder columns for display with new names
         display_df = filtered_df[[
             'customer_name',
             'product_name',
@@ -252,13 +255,25 @@ def show_customer_product_view():
             'status'
         ]]
 
+        # Rename columns for display
+        display_df = display_df.rename(columns={
+            'customer_name': 'Customer',
+            'product_name': 'Product',
+            'product_type': 'Product Type',
+            'quantity': 'Quantity',
+            'issue_date': 'Issue Date',
+            'expiry_date': 'Expiry Date',
+            'status': 'Status'
+        })
+
         st.dataframe(
             display_df,
             use_container_width=True,
+            hide_index=True,  # This removes the index column
             column_config={
-                "quantity": st.column_config.NumberColumn("Quantity", format="%d"),
-                "issue_date": st.column_config.DateColumn("Issue Date"),
-                "expiry_date": st.column_config.DateColumn("Expiry Date")
+                "Quantity": st.column_config.NumberColumn(format="%d"),
+                "Issue Date": st.column_config.DateColumn(),
+                "Expiry Date": st.column_config.DateColumn()
             }
         )
 

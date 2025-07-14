@@ -25,10 +25,17 @@ def get_all_products():
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute("""
-                           SELECT product_id, product_name, product_type, license_unit, default_validity_months
-                           FROM products
-                           ORDER BY product_name
-                           """)
+                SELECT 
+                    product_id, 
+                    product_name, 
+                    product_type, 
+                    license_unit, 
+                    default_validity_months,
+                    DATE(updated_at) as updated_at,
+                    DATE(DATE_ADD(updated_at, INTERVAL default_validity_months MONTH)) as expiry_date
+                FROM products
+                ORDER BY product_name
+            """)
             return cursor.fetchall()
         except Error as e:
             st.error(f"Database error: {e}")
@@ -327,25 +334,37 @@ def show_product_master():
             # View mode - show interactive table
             st.subheader("Product List")
 
-            # Convert to DataFrame
             df = pd.DataFrame(products)
+            # Format the date columns to remove time
+            df['updated_at'] = pd.to_datetime(df['updated_at']).dt.strftime('%Y-%m-%d')
+            df['expiry_date'] = pd.to_datetime(df['expiry_date']).dt.strftime('%Y-%m-%d')
+
+            display_columns = {
+                'product_name': 'Product',
+                'product_type': 'Product Type',
+                'license_unit': 'License Unit',
+                'updated_at': 'Last Updated',
+                'default_validity_months': 'Validity (months)',
+                'expiry_date': 'Expiry Date'
+            }
+
+            display_df = df.rename(columns=display_columns)[list(display_columns.values())]
+
 
             # Configure AgGrid for display
-            gb = GridOptionsBuilder.from_dataframe(df)
+            gb = GridOptionsBuilder.from_dataframe(display_df)
             gb.configure_default_column(editable=False)
             gb.configure_selection('single')
             grid_options = gb.build()
 
             # Display the grid
             grid_response = AgGrid(
-                df,
+                display_df,
                 gridOptions=grid_options,
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
                 fit_columns_on_grid_load=True,
                 height=400
             )
-
-            # Add new product form
 
     else:
         st.info("No products found in the database")
