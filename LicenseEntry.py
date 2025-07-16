@@ -72,7 +72,8 @@ def get_licenses_by_customer(customer_id):
                                   l.installation_date,
                                   l.expiry_date,
                                   l.remarks,
-                                  l.validity_period_months
+                                  l.validity_period_months,
+                                  l.amount
                            FROM licenses l
                                     JOIN products p ON l.product_id = p.product_id
                            WHERE l.customer_id = %s
@@ -118,7 +119,8 @@ def save_license(license_data, license_id=None):
                                    issue_date             = %s,
                                    installation_date      = %s,
                                    validity_period_months = %s,
-                                   remarks                = %s
+                                   remarks                = %s,
+                                   amount                 = %s
                                WHERE license_id = %s
                                """, (*license_data, license_id))
 
@@ -127,8 +129,8 @@ def save_license(license_data, license_id=None):
                 cursor.execute("""
                                INSERT INTO licenses
                                (customer_id, product_id, quantity, issue_date, installation_date,
-                                validity_period_months, remarks)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                validity_period_months, remarks, amount)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                                """, license_data)
             conn.commit()
             return True, "License record saved successfully!"
@@ -173,7 +175,8 @@ def get_all_licenses():
                                   l.remarks,
                                   l.customer_id,
                                   l.product_id,
-                                  l.validity_period_months
+                                  l.validity_period_months,
+                                  l.amount
                            FROM licenses l
                                     JOIN customers c ON l.customer_id = c.customer_id
                                     JOIN products p ON l.product_id = p.product_id
@@ -365,13 +368,12 @@ def show_license_entry():
                 col1, col2 = st.columns(2)
                 with col1:
                     # Customer dropdown
-                    customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in
-                                        customers}
+                    customer_options = {c['customer_name']: c['customer_id'] for c in customers}
                     selected_customer = st.selectbox("Customer*",
                                                      options=["Select customer"] + list(customer_options.keys()))
 
                     # Product dropdown
-                    product_options = {f"{p['product_id']} - {p['product_name']}": p for p in products}
+                    product_options = {p['product_name']: p for p in products}
                     selected_product = st.selectbox("Product*",
                                                     options=["Select product"] + list(product_options.keys()))
 
@@ -393,7 +395,9 @@ def show_license_entry():
                     # Calculate and display expiry date
                     if selected_product != "Select product" and issue_date:
                         expiry_date = calculate_expiry_date(issue_date, validity_period)
-                        st.text(f"Renewal Date: {expiry_date.strftime('%Y-%m-%d')}")
+                        st.badge(f"Renewal Date: {expiry_date.strftime('%Y-%m-%d')}", icon=":material/check:", color="green")
+
+                amount = st.number_input("Amount", min_value=0.0, format="%.2f", value=0.0)
 
                 remarks = st.text_area("Remarks", max_chars=500)
 
@@ -411,7 +415,8 @@ def show_license_entry():
                             issue_date,
                             installation_date if installation_date else None,
                             validity_period,
-                            remarks
+                            remarks,
+                            amount
                         )
                         success, message = save_license(license_data)
                         if success:
@@ -421,7 +426,7 @@ def show_license_entry():
                             st.error(message)
 
         with st.expander("Upgrade License"):
-            customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+            customer_options = {c['customer_name']: c['customer_id'] for c in customers}
             selected_customer = st.selectbox(
                 "Select Customer",
                 options=["Select a customer"] + list(customer_options.keys()),
@@ -438,7 +443,7 @@ def show_license_entry():
                 if customer_licenses:
                     # License selection dropdown
                     license_options = {
-                        f"{l['license_id']} - {l['product_name']} (Issued: {l['issue_date']})": l
+                        f"{l['product_name']} (Issued: {l['issue_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
                     }
                     selected_license = st.selectbox(
@@ -451,14 +456,13 @@ def show_license_entry():
                         selected_license_data = license_options[selected_license]
                         if st.session_state.selected_license != selected_license_data:
                             st.session_state.selected_license = selected_license_data
-                            st.session_state.validity_period = selected_license_data['validity_period_months']
+                            st.session_state.original_quantity = selected_license_data['quantity']
+                            st.session_state.original_amount = selected_license_data.get('amount', 0.0)
                             st.rerun()
 
                         # Initialize or update expiry date
                         issue_date = st.session_state.selected_license['issue_date']
-                        current_validity = st.session_state.get('validity_period',
-                                                                st.session_state.selected_license[
-                                                                    'validity_period_months'])
+                        current_validity = st.session_state.selected_license['validity_period_months']
                         current_expiry = calculate_expiry_date(issue_date, current_validity)
 
                         # Display the form
@@ -472,19 +476,28 @@ def show_license_entry():
                                 )
                                 st.text_input(
                                     "Customer",
-                                    value=selected_customer.split(" - ")[1],
+                                    value=selected_customer,  # Just use the name directly
                                     disabled=True
                                 )
                                 st.text_input(
                                     "Product",
-                                    value=selected_license.split(" - ")[1],
+                                    value=selected_license_data['product_name'],  # Get name from license data
                                     disabled=True
                                 )
-                                quantity = st.number_input(
-                                    "Quantity*",
-                                    min_value=1,
-                                    value=st.session_state.selected_license['quantity']
+
+                                # Show original quantity and input for additional
+                                st.text_input(
+                                    "Original Quantity",
+                                    value=st.session_state.original_quantity,
+                                    disabled=True
                                 )
+                                additional_quantity = st.number_input(
+                                    "Additional Quantity*",
+                                    min_value=0,
+                                    value=0,
+                                    key="additional_quantity"
+                                )
+                                new_quantity = st.session_state.original_quantity + additional_quantity
 
                             with col2:
                                 st.date_input(
@@ -493,63 +506,130 @@ def show_license_entry():
                                     disabled=True
                                 )
 
-                                # Validity period input - will update session state on change
-                                validity_period = st.number_input(
-                                    "Validity Period (months)*",
-                                    min_value=1,
-                                    value=st.session_state.get('validity_period',
-                                                               st.session_state.selected_license[
-                                                                   'validity_period_months']),
-                                    key="validity_input"
+                                st.date_input(
+                                    "Installation Date",
+                                    value=st.session_state.selected_license['installation_date'],
+                                    disabled=True
                                 )
 
-                                # Display current expiry date
-                                st.text(f"Renewal Date: {current_expiry.strftime('%Y-%m-%d')}")
-
-                                remarks = st.text_area(
-                                    "Remarks",
-                                    value=f"Upgraded on {datetime.now().date()} - {st.session_state.selected_license['remarks']}",
-                                    max_chars=500
+                                # Show validity period as read-only
+                                st.text_input(
+                                    "Validity Period (months)",
+                                    value=current_validity,
+                                    disabled=True
                                 )
 
-                            submit_button = st.form_submit_button("Submit Upgrade")
+                                # Show renewal date as non-editable
+                                renewal_date = calculate_expiry_date(issue_date, current_validity)
+                                st.date_input(
+                                    "Renewal Date",
+                                    value=renewal_date,
+                                    disabled=True
+                                )
 
-                        # Update validity period in session state when changed
-                        if validity_period != st.session_state.get('validity_period'):
-                            st.session_state.validity_period = validity_period
-                            st.rerun()
+                                # Show original amount and input for additional
+                                st.text_input(
+                                    "Original Amount",
+                                    value=f"{float(st.session_state.original_amount):.2f}",
+                                    disabled=True
+                                )
+                            additional_amount = st.number_input(
+                                "Additional Amount",
+                                min_value=0.0,
+                                value=0.0,
+                                format="%.2f",
+                                key="additional_amount"
+                            )
+                            new_amount = float(st.session_state.original_amount) + float(additional_amount)
 
-                        if submit_button:
-                            # Use product ID from selected license
-                            product_id = st.session_state.selected_license['product_id']
-                            installation_date = st.session_state.selected_license['installation_date']
-
-                            license_data = (
-                                st.session_state.selected_customer_id,
-                                product_id,
-                                quantity,
-                                issue_date,
-                                installation_date,
-                                validity_period,
-                                remarks
+                            remarks = st.text_area(
+                                "Remarks",
+                                value="",
+                                max_chars=500,
+                                placeholder="Enter upgrade reason or notes"
                             )
 
-                            success, message = save_license(
-                                license_data,
-                                st.session_state.selected_license['license_id']
-                            )
+                            # Form submission button
+                            submitted = st.form_submit_button("Submit Upgrade")
 
-                            if success:
-                                st.success("License updated successfully!")
-                                st.session_state.selected_license = None
-                                st.session_state.validity_period = None
-                                st.rerun()
+                            if submitted:
+                                # Use product ID from selected license
+                                product_id = st.session_state.selected_license['product_id']
+                                installation_date = st.session_state.selected_license['installation_date']
+
+                                license_data = (
+                                    st.session_state.selected_customer_id,
+                                    product_id,
+                                    new_quantity,
+                                    issue_date,
+                                    installation_date,
+                                    current_validity,  # Keep original validity period
+                                    remarks,
+                                    float(new_amount)
+                                )
+
+                                success, message = save_license(
+                                    license_data,
+                                    st.session_state.selected_license['license_id']
+                                )
+
+                                if success:
+                                    st.success("License upgraded successfully!")
+                                    # Update history in remarks
+                                    history_entry = f"\n\nUpgraded on {datetime.now().date()}:\n" \
+                                                    f"- Quantity changed from {st.session_state.original_quantity} to {new_quantity}\n" \
+                                                    f"- Amount changed from {st.session_state.original_amount:.2f} to {new_amount:.2f}\n" \
+                                                    f"- Remarks: {remarks}"
+
+                                    # Update the license with history
+                                    updated_remarks = (st.session_state.selected_license[
+                                                           'remarks'] or "") + history_entry
+                                    license_data_with_history = (
+                                        st.session_state.selected_customer_id,
+                                        product_id,
+                                        new_quantity,
+                                        issue_date,
+                                        installation_date,
+                                        current_validity,
+                                        updated_remarks,
+                                        float(new_amount)
+                                    )
+                                    save_license(license_data_with_history,
+                                                 st.session_state.selected_license['license_id'])
+
+                                    st.session_state.selected_license = None
+                                    st.session_state.original_quantity = None
+                                    st.session_state.original_amount = None
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+
+                        with st.expander("Upgrade History"):
+                            if st.session_state.selected_license and st.session_state.selected_license['remarks']:
+                                # Parse the remarks to show history
+                                history_entries = []
+                                remarks = st.session_state.selected_license['remarks']
+
+                                # Split remarks by "Upgraded on" to get each upgrade entry
+                                upgrades = remarks.split("Upgraded on")[1:]  # Skip first empty part
+                                for upgrade in upgrades:
+                                    date_part = upgrade.split(":")[0].strip()
+                                    details = ":".join(upgrade.split(":")[1:])
+                                    history_entries.append({
+                                        "Date": date_part,
+                                        "Details": details.strip()
+                                    })
+
+                                if history_entries:
+                                    st.dataframe(pd.DataFrame(history_entries))
+                                else:
+                                    st.info("No upgrade history found")
                             else:
-                                st.error(message)
+                                st.info("No upgrade history available")
                 else:
                     st.info("This customer has no licenses to upgrade")
         with st.expander("Renew License"):
-            customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+            customer_options = {c['customer_name']: c['customer_id'] for c in customers}
             selected_customer = st.selectbox(
                 "Select Customer",
                 options=["Select a customer"] + list(customer_options.keys()),
@@ -566,7 +646,7 @@ def show_license_entry():
                 if customer_licenses:
                     # License selection dropdown
                     license_options = {
-                        f"{l['license_id']} - {l['product_name']} (Exp: {l['expiry_date']})": l
+                        f"{l['product_name']} (Exp: {l['expiry_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
                     }
                     selected_license = st.selectbox(
@@ -583,7 +663,7 @@ def show_license_entry():
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.text_input("License ID", value=selected_license_data['license_id'], disabled=True)
-                                st.text_input("Customer", value=selected_customer.split(" - ")[1], disabled=True)
+                                st.text_input("Customer", value=selected_customer, disabled=True)
                                 st.text_input("Product", value=selected_license_data['product_name'], disabled=True)
                                 total_quantity = st.number_input(
                                     "Total Quantity*",
@@ -678,7 +758,7 @@ def show_license_entry():
             st.subheader("Edit License")
 
             # Customer selection dropdown
-            customer_options = {f"{c['customer_id']} - {c['customer_name']}": c['customer_id'] for c in customers}
+            customer_options = {c['customer_name']: c['customer_id'] for c in customers}
             selected_customer = st.selectbox(
                 "Select Customer",
                 options=["Select a customer"] + list(customer_options.keys()),
@@ -695,7 +775,7 @@ def show_license_entry():
                 if customer_licenses:
                     # License selection dropdown
                     license_options = {
-                        f"{l['license_id']} - {l['product_name']} (Issued: {l['issue_date']})": l
+                        f"{l['product_name']} (Issued: {l['issue_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
                     }
                     selected_license = st.selectbox(
@@ -736,19 +816,18 @@ def show_license_entry():
                                     # Display customer name as read-only
                                     st.text_input(
                                         "Customer",
-                                        value=selected_customer.split(" - ")[1],
+                                        value=selected_customer,  # Just use the name directly
                                         disabled=True
                                     )
 
                                     # Product dropdown
-                                    product_options = {f"{p['product_id']} - {p['product_name']}": p['product_id'] for p
-                                                       in products}
+                                    product_options = {p['product_name']: p['product_id'] for p in products}
                                     selected_product = st.selectbox(
                                         "Product*",
                                         options=["Select product"] + list(product_options.keys()),
                                         index=list(product_options.keys()).index(
-                                            f"{st.session_state.license_data['product_id']} - {st.session_state.license_data['product_name']}"
-                                        ) + 1 if st.session_state.license_data.get('product_id') else 0
+                                            st.session_state.license_data['product_name']
+                                        ) if st.session_state.license_data.get('product_name') else 0
                                     )
 
                                     quantity = st.number_input(
@@ -773,6 +852,12 @@ def show_license_entry():
                                         min_value=1,
                                         value=st.session_state.license_data['validity_period_months']
                                     )
+                                    amount = st.number_input(
+                                        "Amount",
+                                        min_value=0.0,
+                                        format="%.2f",
+                                        value=st.session_state.license_data.get('amount', 0.0)
+                                    )
 
                                 remarks = st.text_area(
                                     "Remarks",
@@ -793,7 +878,8 @@ def show_license_entry():
                                             issue_date,
                                             installation_date if installation_date else None,
                                             validity_period,
-                                            remarks
+                                            remarks,
+                                            amount
                                         )
                                         if save_license(license_data, st.session_state.selected_license['license_id']):
                                             st.success("License updated successfully!")
@@ -830,6 +916,7 @@ def show_license_entry():
                 'Issue Date': l['issue_date'],
                 'Validity Period': l['validity_period_months'],
                 'Expiry Date': l['expiry_date'],
+                'Amount' : l['amount'],
                 'Remarks': l['remarks']
             } for l in licenses]
 
