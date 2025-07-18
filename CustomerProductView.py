@@ -239,9 +239,6 @@ def show_customer_product_view():
             filtered_df = filtered_df[filtered_df['status'] == selected_status]
 
         # Display results
-        # ... existing code ...
-
-        # Display results
         st.subheader("Customer Products")
 
         # Reorder columns for display with new names
