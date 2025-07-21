@@ -146,6 +146,9 @@ def delete_license(license_id):
     if conn:
         try:
             cursor = conn.cursor()
+            # First delete associated renewals
+            cursor.execute("DELETE FROM renewals WHERE license_id = %s", (license_id,))
+            # Then delete the license
             cursor.execute("DELETE FROM licenses WHERE license_id = %s", (license_id,))
             conn.commit()
             return cursor.rowcount > 0
@@ -458,11 +461,9 @@ def show_license_entry():
                 customer_id = customer_options[selected_customer]
                 st.session_state.selected_customer_id = customer_id
 
-                # Get licenses for selected customer
                 customer_licenses = get_licenses_by_customer(customer_id)
 
                 if customer_licenses:
-                    # License selection dropdown
                     license_options = {
                         f"{l['product_name']} (Issued: {l['issue_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
@@ -478,40 +479,28 @@ def show_license_entry():
                         if st.session_state.selected_license != selected_license_data:
                             st.session_state.selected_license = selected_license_data
                             st.session_state.original_quantity = selected_license_data['quantity']
-                            st.session_state.original_amount = selected_license_data.get('amount', 0.0)
                             st.rerun()
 
-                        # Initialize or update expiry date
                         issue_date = st.session_state.selected_license['issue_date']
                         current_validity = st.session_state.selected_license['validity_period_months']
                         current_expiry = calculate_expiry_date(issue_date, current_validity)
 
-                        # Display the form
+                        # Determine currency type
+                        has_kwacha = st.session_state.selected_license.get('kwacha_amount') is not None
+                        currency = "ZMW" if has_kwacha else "USD"
+                        original_amount = float(st.session_state.selected_license.get(
+                            'kwacha_amount' if currency == "ZMW" else 'USD_amount', 0))
+
                         with st.form("upgrade_license_form"):
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.text_input(
-                                    "License ID",
-                                    value=st.session_state.selected_license['license_id'],
-                                    disabled=True
-                                )
-                                st.text_input(
-                                    "Customer",
-                                    value=selected_customer,  # Just use the name directly
-                                    disabled=True
-                                )
-                                st.text_input(
-                                    "Product",
-                                    value=selected_license_data['product_name'],  # Get name from license data
-                                    disabled=True
-                                )
+                                st.text_input("License ID", value=st.session_state.selected_license['license_id'],
+                                              disabled=True)
+                                st.text_input("Customer", value=selected_customer, disabled=True)
+                                st.text_input("Product", value=selected_license_data['product_name'], disabled=True)
+                                st.text_input("Original Quantity", value=st.session_state.original_quantity,
+                                              disabled=True)
 
-                                # Show original quantity and input for additional
-                                st.text_input(
-                                    "Original Quantity",
-                                    value=st.session_state.original_quantity,
-                                    disabled=True
-                                )
                                 additional_quantity = st.number_input(
                                     "Additional Quantity*",
                                     min_value=0,
@@ -520,94 +509,52 @@ def show_license_entry():
                                 )
                                 new_quantity = st.session_state.original_quantity + additional_quantity
 
-                                st.text_input(
-                                    "Original Amount (USD)",
-                                    value=f"{float(st.session_state.selected_license.get('USD_amount', 0)):.2f}" if st.session_state.selected_license.get(
-                                        'USD_amount') is not None else "N/A",
-                                    disabled=True
-                                )
+
 
                             with col2:
-                                st.date_input(
-                                    "Issue Date",
-                                    value=issue_date,
-                                    disabled=True
-                                )
-
-                                st.date_input(
-                                    "Installation Date",
-                                    value=st.session_state.selected_license['installation_date'],
-                                    disabled=True
-                                )
-
-                                # Show validity period as read-only
+                                st.date_input("Issue Date", value=issue_date, disabled=True)
+                                st.date_input("Installation Date",
+                                              value=st.session_state.selected_license['installation_date'],
+                                              disabled=True)
+                                st.text_input("Validity Period (months)", value=current_validity, disabled=True)
+                                st.date_input("Renewal Date", value=current_expiry, disabled=True)
                                 st.text_input(
-                                    "Validity Period (months)",
-                                    value=current_validity,
+                                    f"Original Amount ({currency})",
+                                    value=f"{original_amount:.2f}",
                                     disabled=True
                                 )
 
-                                # Show renewal date as non-editable
-                                renewal_date = calculate_expiry_date(issue_date, current_validity)
-                                st.date_input(
-                                    "Renewal Date",
-                                    value=renewal_date,
-                                    disabled=True
+                                # Additional amount field - only shown if there's an original amount
+                            if original_amount > 0:
+                                additional_amount = st.number_input(
+                                    f"Additional Amount ({currency})",
+                                    min_value=0.0,
+                                    value=0.0,
+                                    format="%.2f",
+                                    key="additional_amount"
                                 )
-
-                                # Replace the amount display section with:
-                                st.text_input(
-                                    "Original Amount (ZMW)",
-                                    value=f"{float(st.session_state.selected_license.get('kwacha_amount', 0)):.2f}" if st.session_state.selected_license.get(
-                                        'kwacha_amount') is not None else "N/A",
-                                    disabled=True
-                                )
-
-
-
-                                amount_col1, amount_col2 = st.columns(2)
-                                with amount_col1:
-                                    currency = st.radio("Currency", ["ZMW", "USD"], horizontal=True, key="upgrade_currency")
-                                with amount_col2:
-                                    additional_amount = st.number_input(
-                                        f"Additional Amount ({currency})",
-                                        min_value=0.0,
-                                        value=0.0,
-                                        format="%.2f",
-                                        key="additional_amount"
-                                    )
                                 if currency == "ZMW":
-                                    original_amount = float(st.session_state.selected_license.get('kwacha_amount', 0))
-                                    new_kwacha_amount = original_amount + float(additional_amount)
-                                    new_usd_amount = st.session_state.selected_license.get('USD_amount')
+                                    new_kwacha_amount = original_amount + additional_amount
+                                    new_usd_amount = None
                                 else:
-                                    original_amount = float(st.session_state.selected_license.get('USD_amount', 0))
-                                    new_usd_amount = original_amount + float(additional_amount)
-                                    new_kwacha_amount = st.session_state.selected_license.get('kwacha_amount')
+                                    new_usd_amount = original_amount + additional_amount
+                                    new_kwacha_amount = None
+                            else:
+                                additional_amount = 0.0
+                                new_kwacha_amount = None if currency == "USD" else 0.0
+                                new_usd_amount = None if currency == "ZMW" else 0.0
 
+                            remarks = st.text_area("Remarks", value="", max_chars=500,
+                                                   placeholder="Enter upgrade reason or notes")
 
-
-                            remarks = st.text_area(
-                                "Remarks",
-                                value="",
-                                max_chars=500,
-                                placeholder="Enter upgrade reason or notes"
-                            )
-
-                            # Form submission button
                             submitted = st.form_submit_button("Submit Upgrade")
-
                             if submitted:
-                                # Use product ID from selected license
-                                product_id = st.session_state.selected_license['product_id']
-                                installation_date = st.session_state.selected_license['installation_date']
-
                                 license_data = (
                                     st.session_state.selected_customer_id,
-                                    product_id,
+                                    st.session_state.selected_license['product_id'],
                                     new_quantity,
                                     issue_date,
-                                    installation_date,
+                                    st.session_state.selected_license['installation_date'],
                                     current_validity,
                                     remarks,
                                     new_kwacha_amount,
@@ -621,40 +568,14 @@ def show_license_entry():
 
                                 if success:
                                     st.success("License upgraded successfully!")
-                                    # Get original amounts for history
-                                    original_kwacha = st.session_state.selected_license.get('kwacha_amount', 0) or 0
-                                    original_usd = st.session_state.selected_license.get('USD_amount', 0) or 0
-
-                                    # Create history entry with currency-specific amounts
                                     history_entry = f"\n\nUpgraded on {datetime.now().date()}:\n" \
-                                                    f"- Quantity changed from {st.session_state.original_quantity} to {new_quantity}\n"
+                                                    f"- Quantity changed from {st.session_state.original_quantity} to {new_quantity}\n" \
+                                                    f"- {currency} Amount changed from {original_amount:.2f} to {(original_amount + additional_amount):.2f}\n" \
+                                                    f"- Remarks: {remarks}"
 
-                                    if currency == "ZMW":
-                                        history_entry += f"- Kwacha Amount changed from {original_kwacha:.2f} to {new_kwacha_amount:.2f}\n"
-                                    else:
-                                        history_entry += f"- USD Amount changed from {original_usd:.2f} to {new_usd_amount:.2f}\n"
-
-                                    history_entry += f"- Remarks: {remarks}"
-
-                                    # Update the license with history
                                     updated_remarks = (st.session_state.selected_license[
                                                            'remarks'] or "") + history_entry
 
-                                    # Create data for history update (only remarks change)
-                                    license_data_with_history = (
-                                        st.session_state.selected_customer_id,
-                                        product_id,
-                                        new_quantity,
-                                        issue_date,
-                                        installation_date,
-                                        current_validity,
-                                        updated_remarks,
-                                        new_kwacha_amount,
-                                        new_usd_amount,
-                                        st.session_state.selected_license['license_id']
-                                    )
-
-                                    # Update only the remarks with history
                                     cursor = conn.cursor()
                                     cursor.execute("""
                                                    UPDATE licenses
@@ -694,6 +615,7 @@ def show_license_entry():
                                 st.info("No upgrade history available")
                 else:
                     st.info("This customer has no licenses to upgrade")
+
         with st.expander("Renew License"):
             customer_options = {c['customer_name']: c['customer_id'] for c in customers}
             selected_customer = st.selectbox(
@@ -706,11 +628,9 @@ def show_license_entry():
                 customer_id = customer_options[selected_customer]
                 st.session_state.selected_customer_id = customer_id
 
-                # Get licenses for selected customer
                 customer_licenses = get_licenses_by_customer(customer_id)
 
                 if customer_licenses:
-                    # License selection dropdown
                     license_options = {
                         f"{l['product_name']} (Exp: {l['expiry_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
@@ -727,47 +647,30 @@ def show_license_entry():
                         renewal_due_date = calculate_expiry_date(current_date,
                                                                  selected_license_data['validity_period_months'])
 
-                        # Show renewal form
+                        # Determine currency type
+                        has_kwacha = selected_license_data.get('kwacha_amount') is not None
+                        currency = "ZMW" if has_kwacha else "USD"
+                        original_amount = float(
+                            selected_license_data.get('kwacha_amount' if currency == "ZMW" else 'USD_amount', 0))
+
                         with st.form("renew_license_form"):
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.text_input("License ID", value=selected_license_data['license_id'], disabled=True)
-
                                 st.text_input("Product", value=selected_license_data['product_name'], disabled=True)
-
-                                # Original values (read-only)
+                                st.text_input("Original Quantity", value=selected_license_data['quantity'],
+                                              disabled=True)
+                                st.text_input("Original Validity (months)",
+                                              value=selected_license_data['validity_period_months'], disabled=True)
                                 st.text_input(
-                                    "Original Quantity",
-                                    value=selected_license_data['quantity'],
-                                    disabled=True
-                                )
-                                st.text_input(
-                                    "Original Validity (months)",
-                                    value=selected_license_data['validity_period_months'],
-                                    disabled=True
-                                )
-                                st.text_input(
-                                    "Original Amount",
-                                    value=f"{selected_license_data.get('amount', 0.0):.2f}",
-                                    disabled=True
-                                )
-                                st.text_input(
-                                    "Original Amount (USD)",
-                                    value=f"{float(selected_license_data.get('USD_amount', 0)):.2f}" if selected_license_data.get(
-                                        'USD_amount') is not None else "N/A",
+                                    f"Original Amount ({currency})",
+                                    value=f"{original_amount:.2f}",
                                     disabled=True
                                 )
 
                             with col2:
-                                # New values (editable)
-
                                 st.text_input("Customer", value=selected_customer, disabled=True)
-
-                                st.date_input(
-                                    "Renewal Due Date",
-                                    value=renewal_due_date,
-                                    disabled=True
-                                )
+                                st.date_input("Renewal Due Date", value=renewal_due_date, disabled=True)
                                 new_quantity = st.number_input(
                                     "New Quantity*",
                                     min_value=1,
@@ -778,26 +681,13 @@ def show_license_entry():
                                     min_value=1,
                                     value=selected_license_data['validity_period_months']
                                 )
-                                # Replace the amount display section with:
-                                st.text_input(
-                                    "Original Amount (ZMW)",
-                                    value=f"{float(selected_license_data.get('kwacha_amount', 0)):.2f}" if selected_license_data.get(
-                                        'kwacha_amount') is not None else "N/A",
-                                    disabled=True
+                                new_amount = st.number_input(
+                                    f"New Amount ({currency})*",
+                                    min_value=0.0,
+                                    format="%.2f",
+                                    value=original_amount
                                 )
 
-
-                                amount_col1, amount_col2 = st.columns(2)
-                                with amount_col1:
-                                    currency = st.radio("Currency", ["ZMW", "USD"], horizontal=True,
-                                                        key="renew_currency")
-                                with amount_col2:
-                                    new_amount = st.number_input(
-                                        f"New Amount ({currency})*",
-                                        min_value=0.0,
-                                        format="%.2f",
-                                        amount_value = float(license.get('kwacha_amount', 0.0) or 0.0) if currency == "ZMW" else float(license.get('USD_amount', 0.0) or 0.0)
-                                    )
                             invoice_no = st.text_input("Invoice Number")
                             status = st.selectbox(
                                 "Status*",
@@ -812,7 +702,6 @@ def show_license_entry():
                             remarks = st.text_area("Remarks", max_chars=500, placeholder="Enter renewal details")
 
                             submitted = st.form_submit_button("Submit Renewal")
-                            # In your renewal form submission handler:
                             if submitted:
                                 # Calculate currency amounts
                                 kwacha_amount = new_amount if currency == "ZMW" else None
@@ -823,7 +712,7 @@ def show_license_entry():
                                 Renewed on {current_date}:
                                 - Quantity: {selected_license_data['quantity']} → {new_quantity}
                                 - Validity: {selected_license_data['validity_period_months']} → {new_validity} months
-                                - Amount: {selected_license_data.get('kwacha_amount' if currency == 'ZMW' else 'USD_amount', 0):.2f} → {new_amount:.2f} {currency}
+                                - Amount: {original_amount:.2f} → {new_amount:.2f} {currency}
                                 - Remarks: {remarks}
                                 """
 
@@ -836,8 +725,8 @@ def show_license_entry():
                                     selected_license_data['installation_date'],
                                     new_validity,
                                     (selected_license_data['remarks'] or "") + renewal_history,
-                                    kwacha_amount if currency == "ZMW" else selected_license_data.get('kwacha_amount'),
-                                    usd_amount if currency == "USD" else selected_license_data.get('USD_amount'),
+                                    kwacha_amount,
+                                    usd_amount,
                                     selected_license_data['license_id']
                                 )
 
@@ -877,14 +766,11 @@ def show_license_entry():
                         st.subheader("Renewal History")
                         renewals = get_renewals_by_license(selected_license_data['license_id'])
                         if renewals:
-                            # Convert to DataFrame for display
                             renewals_df = pd.DataFrame(renewals)
-                            # Format dates and select columns to display
                             renewals_df['renewal_due_date'] = pd.to_datetime(renewals_df['renewal_due_date']).dt.date
                             renewals_df['created_at'] = pd.to_datetime(renewals_df['created_at']).dt.strftime(
                                 '%Y-%m-%d %H:%M')
 
-                            # Add this before displaying the dataframe
                             if not renewals_df.empty:
                                 renewals_df['renewal_amount_kwatcha'] = renewals_df['renewal_amount_kwatcha'].apply(
                                     lambda x: f"ZMW {x:,.2f}" if pd.notnull(x) else "N/A"
@@ -934,10 +820,7 @@ def show_license_entry():
 
     if licenses:
         if st.session_state.edit_mode:
-            # Edit mode - show customer selection first
             st.subheader("Edit License")
-
-            # Customer selection dropdown
             customer_options = {c['customer_name']: c['customer_id'] for c in customers}
             selected_customer = st.selectbox(
                 "Select Customer",
@@ -949,11 +832,9 @@ def show_license_entry():
                 customer_id = customer_options[selected_customer]
                 st.session_state.selected_customer_id = customer_id
 
-                # Get licenses for selected customer
                 customer_licenses = get_licenses_by_customer(customer_id)
 
                 if customer_licenses:
-                    # License selection dropdown
                     license_options = {
                         f"{l['product_name']} (Issued: {l['issue_date'].strftime('%Y-%m-%d')})": l
                         for l in customer_licenses
@@ -981,36 +862,38 @@ def show_license_entry():
                                 'kwacha_amount': selected_license_data.get('kwacha_amount'),
                                 'USD_amount': selected_license_data.get('USD_amount')
                             }
-
                             st.rerun()
 
-                        # Edit form
                         if st.session_state.selected_license:
                             with st.form("edit_license_form"):
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    # Display license ID as read-only
                                     st.text_input(
                                         "License ID",
                                         value=st.session_state.selected_license['license_id'],
                                         disabled=True
                                     )
-
-                                    # Display customer name as read-only
                                     st.text_input(
                                         "Customer",
-                                        value=selected_customer,  # Just use the name directly
+                                        value=selected_customer,
                                         disabled=True
                                     )
 
-                                    # Product dropdown
                                     product_options = {p['product_name']: p['product_id'] for p in products}
+                                    # Get current product index
+                                    current_product = st.session_state.license_data.get('product_name',
+                                                                                        "Select product")
+                                    product_list = list(product_options.keys())
+                                    try:
+                                        current_index = product_list.index(
+                                            current_product) + 1  # +1 to account for "Select product"
+                                    except ValueError:
+                                        current_index = 0
+
                                     selected_product = st.selectbox(
                                         "Product*",
-                                        options=["Select product"] + list(product_options.keys()),
-                                        index=list(product_options.keys()).index(
-                                            st.session_state.license_data['product_name']
-                                        ) if st.session_state.license_data.get('product_name') else 0
+                                        options=["Select product"] + product_list,
+                                        index=current_index
                                     )
 
                                     quantity = st.number_input(
@@ -1035,24 +918,19 @@ def show_license_entry():
                                         min_value=1,
                                         value=st.session_state.license_data['validity_period_months']
                                     )
-                                # In the "Edit License" section, replace the amount input section with this:
-                                    amount_col1, amount_col2 = st.columns(2)
-                                    with amount_col1:
-                                        currency = st.radio("Currency", ["ZMW", "USD"],
-                                                            horizontal=True,
-                                                            index=0 if st.session_state.license_data.get(
-                                                                'kwacha_amount') is not None else 1,
-                                                            key="edit_currency")
-                                    with amount_col2:
-                                        amount = st.number_input(
-                                            f"Amount ({currency})",
-                                            min_value=0.0,
-                                            format="%.2f",
-                                            value=float(st.session_state.license_data.get('kwacha_amount') or
-                                                        float(st.session_state.license_data.get('USD_amount') or 0.0))
-                                        )
 
+                                    # Determine currency type
+                                    has_kwacha = st.session_state.license_data.get('kwacha_amount') is not None
+                                    currency = "ZMW" if has_kwacha else "USD"
+                                    original_amount = float(st.session_state.license_data.get(
+                                        'kwacha_amount' if currency == "ZMW" else 'USD_amount', 0))
 
+                                    amount = st.number_input(
+                                        f"Amount ({currency})*",
+                                        min_value=0.0,
+                                        format="%.2f",
+                                        value=original_amount
+                                    )
 
                                 remarks = st.text_area(
                                     "Remarks",
@@ -1060,46 +938,46 @@ def show_license_entry():
                                     max_chars=500
                                 )
 
-                                # Form submission buttons
                                 col1, col2, col3 = st.columns([1, 1, 2])
                                 with col1:
-                                    if st.form_submit_button("Save Changes"):
-                                        customer_id = st.session_state.selected_customer_id
-                                        product_id = product_options[selected_product]
-                                        license_data = (
-                                            customer_id,
-                                            product_id,
-                                            quantity,
-                                            issue_date,
-                                            installation_date if installation_date else None,
-                                            validity_period,
-                                            remarks,
-                                            amount if currency == "ZMW" else None,  # kwacha_amount
-                                            amount if currency == "USD" else None  # USD_amount
-                                        )
-                                        if save_license(license_data, st.session_state.selected_license['license_id']):
-                                            st.success("License updated successfully!")
-                                            st.session_state.edit_mode = False
-                                            st.rerun()
+                                    save_clicked = st.form_submit_button("Save Changes")
+                                    if save_clicked:
+                                        if selected_product == "Select product":
+                                            st.error("Please select a valid product")
                                         else:
-                                            st.error("Error updating license")
+                                            customer_id = st.session_state.selected_customer_id
+                                            product_id = product_options[selected_product]
+                                            license_data = (
+                                                customer_id,
+                                                product_id,
+                                                quantity,
+                                                issue_date,
+                                                installation_date if installation_date else None,
+                                                validity_period,
+                                                remarks,
+                                                amount if currency == "ZMW" else None,
+                                                amount if currency == "USD" else None
+                                            )
+                                            success, message = save_license(
+                                                license_data,
+                                                st.session_state.selected_license['license_id']
+                                            )
+                                            if success:
+                                                st.success("License updated successfully!")
+                                                st.session_state.edit_mode = False
+                                                st.rerun()
+                                            else:
+                                                st.error(message)
 
                                 with col2:
                                     if st.form_submit_button("Delete License", type="primary"):
-                                        if st.session_state.get('confirm_delete', False):
-                                            if delete_license(st.session_state.selected_license['license_id']):
-                                                st.success("License deleted successfully!")
-                                                st.session_state.edit_mode = False
-                                                st.session_state.selected_license = None
-                                                st.rerun()
-                                            else:
-                                                st.error("Error deleting license")
-                                        else:
-                                            st.session_state.confirm_delete = True
-                                            st.warning("Are you sure? Click Delete License again to confirm.")
+                                        if delete_license(st.session_state.selected_license['license_id']):
+                                            st.success("License deleted successfully!")
+                                            st.session_state.edit_mode = False
+                                            st.session_state.selected_license = None
                                             st.rerun()
-                else:
-                    st.info("No licenses found for this customer")
+                                        else:
+                                            st.error("Error deleting license")
         else:
             # View mode - show interactive table
             st.subheader("Existing Licenses")
