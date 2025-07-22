@@ -4,6 +4,7 @@ import streamlit as st
 import mysql.connector
 from mysql.connector import Error
 
+
 # --- DB CONNECTION ---
 def get_db_connection():
     try:
@@ -16,6 +17,7 @@ def get_db_connection():
     except Error as e:
         st.error(f"Database error: {e}")
         return None
+
 
 # --- Update password ---
 def update_password(username, current_password, new_password):
@@ -42,6 +44,54 @@ def update_password(username, current_password, new_password):
         finally:
             conn.close()
     return None
+
+
+# --- Check if username exists ---
+def username_exists(username):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT username FROM USERS WHERE username = %s", (username,))
+            exists = cursor.fetchone() is not None
+            conn.close()
+            return exists
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return True  # Assume exists to prevent duplicates on error
+    return True  # Assume exists if connection fails
+
+
+# --- Update username ---
+def update_username(current_username, new_username, password):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # First verify current credentials
+            cursor.execute(
+                "SELECT * FROM USERS WHERE username = %s AND password = %s",
+                (current_username, password)
+            )
+            if not cursor.fetchone():
+                return False, "Incorrect current password"
+
+            # Check if new username already exists
+            if username_exists(new_username):
+                return False, "Username already taken"
+
+            # Update the username
+            cursor.execute(
+                "UPDATE USERS SET username = %s WHERE username = %s",
+                (new_username, current_username)
+            )
+            conn.commit()
+            return True, "Username updated successfully"
+        except Error as e:
+            return False, f"Database error: {e}"
+        finally:
+            conn.close()
+    return False, "Could not connect to database"
 
 
 # --- Delete account ---
@@ -76,6 +126,25 @@ def show_settings():
     username = st.session_state.username
     st.title("⚙️ Settings")
 
+    # --- Change Username ---
+    with st.expander("👤 Change Username"):
+        current_username = st.text_input("Current Username", value=username, disabled=True)
+        new_username = st.text_input("New Username")
+        current_pass = st.text_input("Confirm Current Password", type="password")
+
+        if st.button("Update Username"):
+            if not new_username or not current_pass:
+                st.warning("Please fill in all fields")
+            elif new_username == username:
+                st.warning("New username cannot be the same as current username")
+            else:
+                success, message = update_username(username, new_username, current_pass)
+                if success:
+                    st.success(message)
+                    st.session_state.username = new_username
+                    st.rerun()
+                else:
+                    st.error(message)
 
     # --- Change Password ---
     with st.expander("🔒 Change Password"):
@@ -107,7 +176,6 @@ def show_settings():
                 st.rerun()
             else:
                 st.error("Incorrect password or error deleting account.")
-
 
 
 if __name__ == "__main__":

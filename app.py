@@ -205,6 +205,7 @@ def main():
         "Product Master",
         "License Master",
         "Customer Product View",
+        "Renewal Updates",
         "Settings"
     ])
 
@@ -229,6 +230,9 @@ def main():
     elif page == "Customer Product View":
         from CustomerProductView import show_customer_product_view
         show_customer_product_view()
+    elif page == "Renewal Updates":
+        from RenewalUpdates import show_renewal_updates
+        show_renewal_updates()
     elif page == "Settings":
         from Settings import show_settings
         show_settings()
