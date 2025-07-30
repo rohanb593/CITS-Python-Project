@@ -14,7 +14,12 @@ def generate_salt():
     return secrets.token_hex(16)
 
 def hash_password(password, salt):
-    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+    return hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
 
 def verify_password(stored_password, stored_salt, provided_password):
     return stored_password == hash_password(provided_password, stored_salt)
@@ -80,11 +85,11 @@ def login_user(username, password):
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(
-                "SELECT * FROM USERS WHERE username = %s",
+                "SELECT username, password, salt, role FROM USERS WHERE username = %s",
                 (username,)
             )
             user = cursor.fetchone()
-            if user and verify_password(user['password'], user['salt'], password):
+            if user and 'salt' in user and verify_password(user['password'], user['salt'], password):
                 return user
             return None
         except Error as e:
@@ -234,7 +239,9 @@ def main():
         "Customer Product View",
         "Renewal Updates",
         "Request Form",
+        "Admin Requests" if st.session_state.get('role') == 'admin' else None,
         "Settings"
+
     ])
 
     st.sidebar.divider()
@@ -264,6 +271,9 @@ def main():
     elif page == "Request Form":
         from RequestForm import show_request_form
         show_request_form()
+    elif page == "Admin Requests":
+        from AdminRequests import show_admin_requests
+        show_admin_requests()
     elif page == "Settings":
         from Settings import show_settings
         show_settings()
@@ -281,9 +291,11 @@ def show_login():
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
             if st.form_submit_button("Login"):
-                if login_user(username, password):
+                user = login_user(username, password)
+                if user:
                     st.session_state.logged_in = True
-                    st.session_state.username = username
+                    st.session_state.username = user['username']
+                    st.session_state.role = user.get('role', 'user')  # Default to 'user' if role not found
                     st.rerun()
                 else:
                     st.error("Invalid credentials")
@@ -291,17 +303,28 @@ def show_login():
     with tab2:
         with st.form("Signup Form"):
             st.subheader("Create Account")
-            new_user = st.text_input("New Username")
-            new_pass = st.text_input("New Password", type="password")
-            confirm_pass = st.text_input("Confirm Password", type="password")
+            new_user = st.text_input("Username*")
+            new_email = st.text_input("Email*")
+            new_pass = st.text_input("Password*", type="password")
+            confirm_pass = st.text_input("Confirm Password*", type="password")
+
+            # Only show role selection for admin users (if you want to restrict admin creation)
+            if st.session_state.get('logged_in') and st.session_state.get('role') == 'admin':
+                role = st.selectbox("Role", ["user", "admin"])
+            else:
+                role = "user"
+
             if st.form_submit_button("Register"):
-                if new_pass != confirm_pass:
+                if not all([new_user, new_email, new_pass, confirm_pass]):
+                    st.error("Please fill all required fields (*)")
+                elif new_pass != confirm_pass:
                     st.error("Passwords don't match!")
-                elif username_exists(new_user):
-                    st.error("Username already exists!")
                 else:
-                    if register_user(new_user, new_pass):
-                        st.success("Account created! Switch to Login tab.")
+                    success, message = register_user(new_user, new_email, new_pass, role)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
 
 
 if __name__ == "__main__":

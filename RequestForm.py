@@ -87,6 +87,108 @@ def update_request_status(request_id, new_status):
     return False
 
 
+# Add at the top of the file
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+
+def get_admin_emails():
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM USERS WHERE role = 'admin'")
+            return [row[0] for row in cursor.fetchall()]
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return []
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return []
+
+
+def send_request_notification(request_data):
+    admin_emails = get_admin_emails()
+    if not admin_emails:
+        st.error("No admin emails found for notification")
+        return False
+
+    smtp_config = {
+        'sender_email': 'your_email@example.com',
+        'smtp_server': 'smtp.example.com',
+        'smtp_port': 587,
+        'smtp_username': 'your_username',
+        'smtp_password': 'your_password',
+        'use_tls': True
+    }
+
+    subject = f"New Request from {request_data['name']}: {request_data['topic']}"
+    message = f"""
+    <html>
+    <body>
+        <h2>New Request Submitted</h2>
+        <p><strong>Requester:</strong> {request_data['name']}</p>
+        <p><strong>Date:</strong> {request_data['date']}</p>
+        <p><strong>Topic:</strong> {request_data['topic']}</p>
+        <p><strong>Description:</strong></p>
+        <p>{request_data['description']}</p>
+        <p>Please review this request in the admin panel.</p>
+    </body>
+    </html>
+    """
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = smtp_config['sender_email']
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message, 'html'))
+
+        with smtplib.SMTP(smtp_config['smtp_server'], smtp_config['smtp_port']) as server:
+            server.ehlo()
+            if smtp_config['use_tls']:
+                server.starttls()
+            server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+            for email in admin_emails:
+                msg['To'] = email
+                server.send_message(msg)
+        return True
+    except Exception as e:
+        st.error(f"Error sending notification: {e}")
+        return False
+
+
+# Modify the save_request function
+def save_request(request_data):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                           INSERT INTO requests (name, date, topic, description, status, created_at)
+                           VALUES (%s, %s, %s, %s, 'Pending', NOW())
+                           """, request_data)
+            conn.commit()
+
+            # Send notification to admins
+            request_dict = {
+                'name': request_data[0],
+                'date': request_data[1].strftime('%Y-%m-%d'),
+                'topic': request_data[2],
+                'description': request_data[3]
+            }
+            send_request_notification(request_dict)
+
+            return True
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return False
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return False
+
 def show_request_form():
     st.set_page_config(page_title="Request Form", layout="wide")
 
