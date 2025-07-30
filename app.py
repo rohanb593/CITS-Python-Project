@@ -7,6 +7,17 @@ from Dashboard import show_dashboard
 import mysql.connector
 from mysql.connector import Error
 import pandas as pd
+import hashlib
+import secrets
+
+def generate_salt():
+    return secrets.token_hex(16)
+
+def hash_password(password, salt):
+    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+
+def verify_password(stored_password, stored_salt, provided_password):
+    return stored_password == hash_password(provided_password, stored_salt)
 
 
 # --- DB CONNECTION ---
@@ -35,39 +46,55 @@ def username_exists(username):
     return False
 
 
-def register_user(username, password):
+def register_user(username, email, password, role='user'):
     conn = get_db_connection()
     if conn:
         try:
+            # Check if username or email already exists
             cursor = conn.cursor()
+            cursor.execute("SELECT username FROM USERS WHERE username = %s OR email = %s", (username, email))
+            if cursor.fetchone():
+                return False, "Username or email already exists"
+
+            # Generate salt and hash password
+            salt = generate_salt()
+            hashed_password = hash_password(password, salt)
+
             cursor.execute(
-                "INSERT INTO USERS (username, password) VALUES (%s, %s)",
-                (username, password)
+                "INSERT INTO USERS (username, email, password, salt, role) VALUES (%s, %s, %s, %s, %s)",
+                (username, email, hashed_password, salt, role)
             )
             conn.commit()
-            st.success("Registration successful! Please login.")
-            return True
+            return True, "Registration successful! Please login."
         except Error as e:
-            st.error(f"Error: {e}")
-            return False
+            return False, f"Error: {e}"
         finally:
             if conn.is_connected():
                 conn.close()
-    return False
+    return False, "Could not connect to database"
 
 
 def login_user(username, password):
     conn = get_db_connection()
     if conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM USERS WHERE username = %s AND password = %s",
-            (username, password)
-        )
-        user = cursor.fetchone()
-        conn.close()
-        return user is not None
-    return False
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT * FROM USERS WHERE username = %s",
+                (username,)
+            )
+            user = cursor.fetchone()
+            if user and verify_password(user['password'], user['salt'], password):
+                return user
+            return None
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return None
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return None
+
 
 
 # Add this to Dashboard.py after the existing metrics section
@@ -206,6 +233,7 @@ def main():
         "License Master",
         "Customer Product View",
         "Renewal Updates",
+        "Request Form",
         "Settings"
     ])
 
@@ -233,6 +261,9 @@ def main():
     elif page == "Renewal Updates":
         from RenewalUpdates import show_renewal_updates
         show_renewal_updates()
+    elif page == "Request Form":
+        from RequestForm import show_request_form
+        show_request_form()
     elif page == "Settings":
         from Settings import show_settings
         show_settings()
