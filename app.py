@@ -212,6 +212,7 @@ def show_license_renewal_section():
             st.success("No licenses expiring in the next 3 weeks!")
 
 # --- MAIN APP ROUTER ---
+# --- MAIN APP ROUTER ---
 def main():
     st.set_page_config(layout="wide")
 
@@ -226,12 +227,13 @@ def main():
         return
 
     # Navigation for logged-in users
-
     logo = "images/logo.png"
     st.logo(logo)
 
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", [
+
+    # Define base navigation options
+    nav_options = [
         "Dashboard",
         "Customer Master",
         "Product Master",
@@ -239,10 +241,14 @@ def main():
         "Customer Product View",
         "Renewal Updates",
         "Request Form",
-        "Admin Requests" if st.session_state.get('role') == 'admin' else None,
         "Settings"
+    ]
 
-    ])
+    # Add admin-only option if user is admin
+    if st.session_state.get('role') == 'admin':
+        nav_options.insert(7, "Admin Requests")  # Insert at position 7
+
+    page = st.sidebar.radio("Go to", nav_options)
 
     st.sidebar.divider()
     st.sidebar.markdown(f"### Welcome, {st.session_state.username}!")

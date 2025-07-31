@@ -1,4 +1,4 @@
-# RenewalUpdates.py
+# RenewalUpdates.py (modified version with hardcoded email config)
 import streamlit as st
 import mysql.connector
 from mysql.connector import Error
@@ -78,25 +78,33 @@ def get_expiring_licenses(days_threshold=21):
     return {'expired': [], 'expiring_soon': []}
 
 
-def send_email_notification(recipient_email, subject, message, smtp_config):
-    """Send email notification using SMTP"""
+def send_email_notification(recipient_email, subject, message):
+    """Send email notification using SMTP with hardcoded configuration"""
+    # Hardcoded SMTP configuration
+    smtp_config = {
+        'sender_email': 't0200795@gmail.com',
+        'smtp_server': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'smtp_username': 't0200795@gmail.com',
+        'smtp_password': 'cwee omon xfbd kqwc',  # App password
+        'use_tls': True
+    }
+
     try:
         # Create message with explicit UTF-8 encoding
         msg = MIMEMultipart()
         msg['From'] = smtp_config['sender_email']
         msg['To'] = recipient_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(message, 'html', 'utf-8'))  # ← Force UTF-8
+        msg.attach(MIMEText(message, 'html', 'utf-8'))
 
         # Connect to SMTP server
         with smtplib.SMTP(smtp_config['smtp_server'], smtp_config['smtp_port']) as server:
-            server.ehlo()  # Identify to server
+            server.ehlo()
             if smtp_config['use_tls']:
-                server.starttls()  # Enable TLS
+                server.starttls()
                 server.ehlo()
-            # Ensure password is encoded properly
-            password = smtp_config['smtp_password'].encode('utf-8').decode('ascii', 'ignore')
-            server.login(smtp_config['smtp_username'], password)
+            server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
             server.send_message(msg)
         return True
     except Exception as e:
@@ -148,66 +156,6 @@ def show_renewal_updates():
     st.title("Renewal Notifications")
     st.markdown("Send renewal reminders to clients for expiring or expired licenses.")
 
-    # SMTP Configuration Section
-    with st.expander("📧 Email Server Configuration", expanded=True):
-        st.info("Configure your SMTP email server settings to send notifications")
-
-        # Initialize session state for SMTP config if not exists
-        # In the show_renewal_updates() function, replace the SMTP config initialization with:
-        if 'smtp_config' not in st.session_state:
-            st.session_state.smtp_config = {
-                'sender_email': 't0200795@gmail.com',
-                'smtp_server': 'smtp.gmail.com',
-                'smtp_port': 587,
-                'smtp_username': 't0200795@gmail.com',
-                'smtp_password': 'cwee omon xfbd kqwc',  # Paste the app password here
-                'use_tls': True
-            }
-
-        # Form for SMTP configuration
-        with st.form("smtp_config_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                sender_email = st.text_input(
-                    "Sender Email",
-                    value=st.session_state.smtp_config['sender_email']
-                )
-                smtp_server = st.text_input(
-                    "SMTP Server",
-                    value=st.session_state.smtp_config['smtp_server']
-                )
-                smtp_port = st.number_input(
-                    "SMTP Port",
-                    min_value=1,
-                    max_value=65535,
-                    value=st.session_state.smtp_config['smtp_port']
-                )
-            with col2:
-                smtp_username = st.text_input(
-                    "SMTP Username",
-                    value=st.session_state.smtp_config['smtp_username']
-                )
-                smtp_password = st.text_input(
-                    "SMTP Password",
-                    type="password",
-                    value=st.session_state.smtp_config['smtp_password']
-                )
-                use_tls = st.checkbox(
-                    "Use TLS",
-                    value=st.session_state.smtp_config['use_tls']
-                )
-
-            if st.form_submit_button("Save SMTP Configuration"):
-                st.session_state.smtp_config = {
-                    'sender_email': sender_email,
-                    'smtp_server': smtp_server,
-                    'smtp_port': smtp_port,
-                    'smtp_username': smtp_username,
-                    'smtp_password': smtp_password,
-                    'use_tls': use_tls
-                }
-                st.success("SMTP configuration saved!")
-
     # License Selection Section
     with st.expander("📝 Select Licenses for Notification", expanded=True):
         days_threshold = st.slider(
@@ -220,14 +168,10 @@ def show_renewal_updates():
         licenses = get_expiring_licenses(days_threshold)
 
         # Expired licenses
-        # Expired licenses
         if licenses['expired']:
             st.subheader("Expired Licenses (Needs Immediate Attention)")
             expired_df = pd.DataFrame(licenses['expired'])
-            # Keep original days_remaining for calculations but add a display column
             expired_df['status_display'] = expired_df['days_remaining'].apply(lambda x: f"Expired {abs(x)} days ago")
-
-            # Add checkbox column
             expired_df['Select'] = False
             edited_expired_df = st.data_editor(
                 expired_df,
@@ -240,7 +184,7 @@ def show_renewal_updates():
                     "expiry_date": st.column_config.DateColumn("Expiry Date"),
                     "status_display": st.column_config.TextColumn("Status"),
                     "Select": st.column_config.CheckboxColumn("Select for Notification"),
-                    "days_remaining": None  # Hide this column from display
+                    "days_remaining": None
                 },
                 use_container_width=True,
                 hide_index=True
@@ -249,16 +193,12 @@ def show_renewal_updates():
             st.info("No expired licenses found")
 
         # Expiring soon licenses
-        # Expiring soon licenses
         if licenses['expiring_soon']:
             st.subheader(f"Licenses Expiring Soon (Within {days_threshold} Days)")
             expiring_df = pd.DataFrame(licenses['expiring_soon'])
-            # Keep original days_remaining for calculations but add a display column
             expiring_df['status_display'] = expiring_df['days_remaining'].apply(
                 lambda x: f"Expires in {x} days" if x > 0 else "Expires today"
             )
-
-            # Add checkbox column
             expiring_df['Select'] = False
             edited_expiring_df = st.data_editor(
                 expiring_df,
@@ -271,7 +211,7 @@ def show_renewal_updates():
                     "expiry_date": st.column_config.DateColumn("Expiry Date"),
                     "status_display": st.column_config.TextColumn("Status"),
                     "Select": st.column_config.CheckboxColumn("Select for Notification"),
-                    "days_remaining": None  # Hide this column from display
+                    "days_remaining": None
                 },
                 use_container_width=True,
                 hide_index=True
@@ -321,9 +261,7 @@ def show_renewal_updates():
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Send Test Notification") and test_email:
-                    # Use the first selected license for test
                     test_license = selected_licenses[0]
-
                     notification_type = "expired" if int(test_license['days_remaining']) < 0 else "expiring"
                     subject, html_content = get_email_template(test_license, notification_type)
 
@@ -336,8 +274,7 @@ def show_renewal_updates():
                     if send_email_notification(
                             test_email,
                             f"[TEST] {subject}",
-                            html_content,
-                            st.session_state.smtp_config
+                            html_content
                     ):
                         st.success(f"Test notification sent to {test_email}")
                     else:
@@ -350,7 +287,6 @@ def show_renewal_updates():
                     total = len(selected_licenses)
 
                     for i, license_data in enumerate(selected_licenses):
-                        # In both test and bulk sending sections, ensure proper type conversion:
                         notification_type = "expired" if int(license_data['days_remaining']) < 0 else "expiring"
                         subject, html_content = get_email_template(license_data, notification_type)
 
@@ -363,8 +299,7 @@ def show_renewal_updates():
                         if send_email_notification(
                                 license_data['email'],
                                 subject,
-                                html_content,
-                                st.session_state.smtp_config
+                                html_content
                         ):
                             success_count += 1
 

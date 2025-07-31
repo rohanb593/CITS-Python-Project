@@ -25,9 +25,13 @@ def get_pending_requests():
             cursor.execute("""
                            SELECT request_id,
                                   name,
-                                  DATE_FORMAT(date, '%%Y-%%m-%%d') as date, 
-                       topic, description, 
-                       DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') as created_at
+                                  DATE_FORMAT(date, '%%Y-%%m-%%d') as date,
+                    topic,
+                    description,
+                    currency,
+                    amount,
+                    status,
+                    DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') as created_at
                            FROM requests
                            WHERE status = 'Pending'
                            ORDER BY created_at DESC
@@ -42,6 +46,36 @@ def get_pending_requests():
     return []
 
 
+
+def get_processed_requests():
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT 
+                    name,
+                    date,
+                    topic,
+                    description,
+                    currency,
+                    amount,
+                    status,
+                    processed_by,
+                    DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') as created_at,
+                    DATE_FORMAT(processed_at, '%Y-%m-%d %H:%i') as processed_at
+                FROM requests
+                WHERE status != 'Pending'
+                ORDER BY processed_at DESC
+            """)
+            return cursor.fetchall()
+        except Error as e:
+            st.error(f"Database error: {e}")
+            return []
+        finally:
+            if conn.is_connected():
+                conn.close()
+    return []
 def update_request_status(request_id, status, admin_username):
     conn = get_db_connection()
     if conn:
@@ -77,20 +111,23 @@ def show_admin_requests():
         return
 
     st.title("Admin Request Management")
-    st.markdown("Review and process pending requests")
 
-    requests = get_pending_requests()
+    # Pending requests section
+    st.subheader("Pending Requests")
+    pending_requests = get_pending_requests()
 
-    if requests:
-        for req in requests:
+    if pending_requests:
+        for req in pending_requests:
             with st.expander(f"Request #{req['request_id']} - {req['topic']}"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"**Requester:** {req['name']}")
                     st.write(f"**Date:** {req['date']}")
                     st.write(f"**Submitted:** {req['created_at']}")
+                    st.write(f"**Amount:** {req['currency']} {req['amount']:.2f}")
                 with col2:
                     st.write(f"**Topic:** {req['topic']}")
+                    st.write(f"**Status:** {req['status']}")
 
                 st.write("**Description:**")
                 st.write(req['description'])
@@ -112,6 +149,36 @@ def show_admin_requests():
                             st.error("Failed to update request")
     else:
         st.info("No pending requests found")
+
+    # Processed requests section
+    with st.expander("📜 Processed Requests History", expanded=False):
+        st.subheader("Processed Requests")
+        processed_requests = get_processed_requests()
+
+        if processed_requests:
+            df = pd.DataFrame(processed_requests)
+            # Format amount with currency
+            df['amount'] = df.apply(lambda x: f"{x['currency']} {x['amount']:.2f}", axis=1)
+
+            # Format date properly
+            df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+
+            st.dataframe(
+                df[['name', 'date', 'topic', 'amount', 'status', 'processed_by', 'processed_at']],
+                column_config={
+                    "name": "Requester",
+                    "date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
+                    "topic": "Topic",
+                    "amount": "Amount",
+                    "status": "Status",
+                    "processed_by": "Processed By",
+                    "processed_at": st.column_config.DatetimeColumn("Processed On", format="YYYY-MM-DD HH:mm")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No processed requests found")
 
 
 if __name__ == "__main__":
