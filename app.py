@@ -1,8 +1,8 @@
 # app.py
 
 import streamlit as st
-from altair.vega import title
-from LicenseEntry import show_license_entry
+
+
 from Dashboard import show_dashboard
 import mysql.connector
 from mysql.connector import Error
