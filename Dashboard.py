@@ -121,6 +121,12 @@ def show_license_renewal_section():
 
     licenses = get_expiring_licenses()
 
+    # Add this check:
+    if not licenses['expired'] and not licenses['expiring_soon']:
+        st.info("No data uploaded - no license renewal information available")
+        return
+
+    # Rest of the existing function...
     # Expired licenses table
     with st.expander("⚠️ Expired Licenses (Needs Immediate Attention)", expanded=True):
         if licenses['expired']:

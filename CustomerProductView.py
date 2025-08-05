@@ -169,6 +169,10 @@ def show_customer_product_view():
     # Get product data
     products = get_customer_products()
 
+    if not products:
+        st.info("No data uploaded - no customer products found in the database")
+        return
+
     if products:
         # Convert to DataFrame
         df = pd.DataFrame(products)
