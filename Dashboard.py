@@ -117,7 +117,6 @@ def get_expiring_licenses():
 
 def show_license_renewal_section():
     """Display tables for expired and soon-to-expire licenses"""
-
     st.subheader("License Renewal Status")
 
     licenses = get_expiring_licenses()
@@ -126,12 +125,13 @@ def show_license_renewal_section():
     with st.expander("⚠️ Expired Licenses (Needs Immediate Attention)", expanded=True):
         if licenses['expired']:
             expired_df = pd.DataFrame(licenses['expired'])
+            # Remove license_id column
+            expired_df = expired_df.drop(columns=['license_id'])
             expired_df['days_remaining'] = expired_df['days_remaining'].apply(lambda x: f"Expired {abs(x)} days ago")
 
             st.dataframe(
                 expired_df,
                 column_config={
-                    "license_id": "License ID",
                     "customer_name": "Customer",
                     "product_name": "Product",
                     "quantity": st.column_config.NumberColumn("Quantity", format="%d"),
@@ -148,6 +148,8 @@ def show_license_renewal_section():
     with st.expander("🔔 Licenses Expiring Soon (Within 3 Weeks)", expanded=True):
         if licenses['expiring_soon']:
             expiring_df = pd.DataFrame(licenses['expiring_soon'])
+            # Remove license_id column
+            expiring_df = expiring_df.drop(columns=['license_id'])
             expiring_df['days_remaining'] = expiring_df['days_remaining'].apply(
                 lambda x: f"Expires in {x} days" if x > 0 else "Expires today"
             )
@@ -155,7 +157,6 @@ def show_license_renewal_section():
             st.dataframe(
                 expiring_df,
                 column_config={
-                    "license_id": "License ID",
                     "customer_name": "Customer",
                     "product_name": "Product",
                     "quantity": st.column_config.NumberColumn("Quantity", format="%d"),

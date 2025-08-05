@@ -250,19 +250,14 @@ def show_renewal_updates():
                 height=100,
                 placeholder="Add any additional message to include in the notifications"
             )
+            if st.button("Send All Notifications", type="primary"):
+                progress_bar = st.progress(0)
+                success_count = 0
+                total = len(selected_licenses)
 
-            # Test email option
-            test_email = st.text_input(
-                "Send test email to (optional)",
-                placeholder="Enter email address to send a test notification"
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Send Test Notification") and test_email:
-                    test_license = selected_licenses[0]
-                    notification_type = "expired" if int(test_license['days_remaining']) < 0 else "expiring"
-                    subject, html_content = get_email_template(test_license, notification_type)
+                for i, license_data in enumerate(selected_licenses):
+                    notification_type = "expired" if int(license_data['days_remaining']) < 0 else "expiring"
+                    subject, html_content = get_email_template(license_data, notification_type)
 
                     if custom_message:
                         html_content = html_content.replace(
@@ -271,68 +266,43 @@ def show_renewal_updates():
                         )
 
                     if send_email_notification(
-                            test_email,
-                            f"[TEST] {subject}",
+                            license_data['email'],
+                            subject,
                             html_content
                     ):
-                        st.success(f"Test notification sent to {test_email}")
-                    else:
-                        st.error("Failed to send test notification")
+                        success_count += 1
 
-            with col2:
-                if st.button("Send All Notifications", type="primary"):
-                    progress_bar = st.progress(0)
-                    success_count = 0
-                    total = len(selected_licenses)
+                    progress_bar.progress((i + 1) / total)
 
-                    for i, license_data in enumerate(selected_licenses):
-                        notification_type = "expired" if int(license_data['days_remaining']) < 0 else "expiring"
-                        subject, html_content = get_email_template(license_data, notification_type)
+                st.success(f"Successfully sent {success_count} out of {total} notifications")
 
-                        if custom_message:
-                            html_content = html_content.replace(
-                                "</body>",
-                                f"<p><strong>Additional Note:</strong> {custom_message}</p></body>"
-                            )
-
-                        if send_email_notification(
-                                license_data['email'],
-                                subject,
-                                html_content
-                        ):
-                            success_count += 1
-
-                        progress_bar.progress((i + 1) / total)
-
-                    st.success(f"Successfully sent {success_count} out of {total} notifications")
-
-                    # Log the notification in the database
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            cursor = conn.cursor()
-                            for license_data in selected_licenses:
-                                cursor.execute("""
-                                               INSERT INTO renewal_notifications
-                                               (license_id, customer_id, product_id, notification_date,
-                                                notification_type)
-                                               SELECT l.license_id,
-                                                      l.customer_id,
-                                                      l.product_id,
-                                                      NOW(),
-                                                      %s
-                                               FROM licenses l
-                                               WHERE l.license_id = %s
-                                               """, (
-                                                   "expired" if license_data['days_remaining'] < 0 else "expiring",
-                                                   license_data['license_id']
-                                               ))
-                            conn.commit()
-                        except Error as e:
-                            st.error(f"Error logging notifications: {e}")
-                        finally:
-                            if conn.is_connected():
-                                conn.close()
+                # Log the notification in the database
+                conn = get_db_connection()
+                if conn:
+                    try:
+                        cursor = conn.cursor()
+                        for license_data in selected_licenses:
+                            cursor.execute("""
+                                           INSERT INTO renewal_notifications
+                                           (license_id, customer_id, product_id, notification_date,
+                                            notification_type)
+                                           SELECT l.license_id,
+                                                  l.customer_id,
+                                                  l.product_id,
+                                                  NOW(),
+                                                  %s
+                                           FROM licenses l
+                                           WHERE l.license_id = %s
+                                           """, (
+                                               "expired" if license_data['days_remaining'] < 0 else "expiring",
+                                               license_data['license_id']
+                                           ))
+                        conn.commit()
+                    except Error as e:
+                        st.error(f"Error logging notifications: {e}")
+                    finally:
+                        if conn.is_connected():
+                            conn.close()
 
 
 if __name__ == "__main__":

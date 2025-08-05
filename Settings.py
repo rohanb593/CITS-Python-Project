@@ -3,6 +3,26 @@
 import streamlit as st
 import mysql.connector
 from mysql.connector import Error
+import hashlib
+import secrets
+
+
+# --- Password Hashing Functions ---
+def generate_salt():
+    return secrets.token_hex(16)
+
+
+def hash_password(password, salt):
+    return hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
+
+
+def verify_password(stored_password, stored_salt, provided_password):
+    return stored_password == hash_password(provided_password, stored_salt)
 
 
 # --- DB CONNECTION ---
@@ -24,26 +44,37 @@ def update_password(username, current_password, new_password):
     conn = get_db_connection()
     if conn:
         try:
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
+            # First get the user's current salt and hashed password
             cursor.execute(
-                "SELECT * FROM USERS WHERE username = %s AND password = %s",
-                (username, current_password)
+                "SELECT password, salt FROM USERS WHERE username = %s",
+                (username,)
             )
-            if cursor.fetchone():
-                cursor.execute(
-                    "UPDATE USERS SET password = %s WHERE username = %s",
-                    (new_password, username)
-                )
-                conn.commit()
-                return True
-            else:
-                return False
+            user_data = cursor.fetchone()
+
+            if not user_data:
+                return False, "User not found"
+
+            # Verify current password
+            if not verify_password(user_data['password'], user_data['salt'], current_password):
+                return False, "Incorrect current password"
+
+            # Generate new salt and hash for the new password
+            new_salt = generate_salt()
+            new_hashed_password = hash_password(new_password, new_salt)
+
+            # Update both password and salt in database
+            cursor.execute(
+                "UPDATE USERS SET password = %s, salt = %s WHERE username = %s",
+                (new_hashed_password, new_salt, username)
+            )
+            conn.commit()
+            return True, "Password updated successfully"
         except Error as e:
-            st.error(f"Error updating password: {e}")
-            return False
+            return False, f"Error updating password: {e}"
         finally:
             conn.close()
-    return None
+    return False, "Could not connect to database"
 
 
 # --- Check if username exists ---
@@ -63,17 +94,24 @@ def username_exists(username):
 
 
 # --- Update username ---
+# --- Update username ---
 def update_username(current_username, new_username, password):
     conn = get_db_connection()
     if conn:
         try:
-            cursor = conn.cursor()
-            # First verify current credentials
+            cursor = conn.cursor(dictionary=True)
+            # First verify current credentials by getting user data
             cursor.execute(
-                "SELECT * FROM USERS WHERE username = %s AND password = %s",
-                (current_username, password)
+                "SELECT password, salt FROM USERS WHERE username = %s",
+                (current_username,)
             )
-            if not cursor.fetchone():
+            user_data = cursor.fetchone()
+
+            if not user_data:
+                return False, "User not found"
+
+            # Verify password
+            if not verify_password(user_data['password'], user_data['salt'], password):
                 return False, "Incorrect current password"
 
             # Check if new username already exists
@@ -99,19 +137,32 @@ def delete_account(username, password):
     conn = get_db_connection()
     if conn:
         try:
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
+            # First verify credentials
             cursor.execute(
-                "DELETE FROM USERS WHERE username = %s AND password = %s",
-                (username, password)
+                "SELECT password, salt FROM USERS WHERE username = %s",
+                (username,)
+            )
+            user_data = cursor.fetchone()
+
+            if not user_data:
+                return False, "User not found"
+
+            if not verify_password(user_data['password'], user_data['salt'], password):
+                return False, "Incorrect password"
+
+            # Delete the account
+            cursor.execute(
+                "DELETE FROM USERS WHERE username = %s",
+                (username,)
             )
             conn.commit()
-            return cursor.rowcount > 0
+            return True, "Account deleted successfully"
         except Error as e:
-            st.error(f"Error deleting account: {e}")
-            return False
+            return False, f"Error deleting account: {e}"
         finally:
             conn.close()
-    return None
+    return False, "Could not connect to database"
 
 
 # --- MAIN SETTINGS PAGE ---
@@ -126,6 +177,7 @@ def show_settings():
     username = st.session_state.username
     st.title("⚙️ Settings")
 
+    # --- Change Username ---
     # --- Change Username ---
     with st.expander("👤 Change Username"):
         current_username = st.text_input("Current Username", value=username, disabled=True)
@@ -142,9 +194,16 @@ def show_settings():
                 if success:
                     st.success(message)
                     st.session_state.username = new_username
+                    # Add a slight delay to make sure the message is visible
+                    st.session_state.show_username_update_message = True
                     st.rerun()
                 else:
                     st.error(message)
+
+        # Show the success message after rerun if needed
+        if st.session_state.get('show_username_update_message', False):
+            st.success("Username updated successfully.")
+            st.session_state.show_username_update_message = False
 
     # --- Change Password ---
     with st.expander("🔒 Change Password"):
@@ -158,24 +217,25 @@ def show_settings():
             elif new != confirm:
                 st.error("New passwords do not match.")
             else:
-                success = update_password(username, current, new)
+                success, message = update_password(username, current, new)
                 if success:
-                    st.success("Password updated successfully!")
+                    st.success(message)
                 else:
-                    st.error("Incorrect current password.")
+                    st.error(message)
 
     # --- Delete Account ---
     with st.expander("🗑️ Delete Account"):
         st.warning("This action is irreversible.")
         del_pass = st.text_input("Confirm your password to delete account", type="password")
         if st.button("Delete My Account"):
-            if delete_account(username, del_pass):
-                st.success("Your account has been deleted.")
+            success, message = delete_account(username, del_pass)
+            if success:
+                st.success(message)
                 st.session_state.logged_in = False
                 st.session_state.username = None
                 st.rerun()
             else:
-                st.error("Incorrect password or error deleting account.")
+                st.error(message)
 
 
 if __name__ == "__main__":
