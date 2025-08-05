@@ -79,18 +79,18 @@ def get_expiring_licenses(days_threshold=21):
 
 
 def send_email_notification(recipient_email, subject, message):
-    """Send email notification using SMTP with hardcoded configuration"""
-    # Hardcoded SMTP configuration
-    smtp_config = {
-        'sender_email': 't0200795@gmail.com',
-        'smtp_server': 'smtp.gmail.com',
-        'smtp_port': 587,
-        'smtp_username': 't0200795@gmail.com',
-        'smtp_password': 'cwee omon xfbd kqwc',  # App password
-        'use_tls': True
-    }
-
+    """Send email notification using SMTP with configuration from secrets"""
     try:
+        # Get SMTP configuration from Streamlit secrets
+        smtp_config = {
+            'sender_email': st.secrets.smtp.sender_email,
+            'smtp_server': st.secrets.smtp.server,
+            'smtp_port': st.secrets.smtp.port,
+            'smtp_username': st.secrets.smtp.username,
+            'smtp_password': st.secrets.smtp.password,
+            'use_tls': st.secrets.smtp.use_tls
+        }
+
         # Create message with explicit UTF-8 encoding
         msg = MIMEMultipart()
         msg['From'] = smtp_config['sender_email']
@@ -110,7 +110,6 @@ def send_email_notification(recipient_email, subject, message):
     except Exception as e:
         st.error(f"Error sending email: {e}")
         return False
-
 
 def get_email_template(license_data, notification_type):
     """Generate HTML email template based on license data and notification type"""
