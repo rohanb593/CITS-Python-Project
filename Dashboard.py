@@ -26,8 +26,9 @@ def get_customer_count():
     if conn:
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM customers")
-            return cursor.fetchone()[0]
+            cursor.execute("SELECT COALESCE(COUNT(*), 0) FROM customers")
+            count = cursor.fetchone()[0]
+            return int(count) if count is not None else 0
         except Error as e:
             st.error(f"Database error: {e}")
             return 0
@@ -42,14 +43,18 @@ def get_license_stats():
     conn = get_db_connection()
     if conn:
         try:
-            query = """
-                    SELECT SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END) as active, \
-                           SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END)  as expired
-                    FROM licenses \
-                    """
             cursor = conn.cursor(dictionary=True)
-            cursor.execute(query)
-            return cursor.fetchone()
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END), 0) as active,
+                    COALESCE(SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END), 0) as expired
+                FROM licenses
+            """)
+            result = cursor.fetchone()
+            return {
+                'active': int(result['active']) if result['active'] is not None else 0,
+                'expired': int(result['expired']) if result['expired'] is not None else 0
+            }
         except Error as e:
             st.error(f"Database error: {e}")
             return {'active': 0, 'expired': 0}
@@ -181,31 +186,39 @@ def show_pie_charts():
     # Get license stats
     license_stats = get_license_stats()
 
-    # System Totals Pie Chart (Counts only)
-    totals = {
-        'Products': len(get_all_products()),
-        'Customers': get_customer_count(),
-        'Active Licenses': license_stats['active'],
-        'Expired Licenses': license_stats['expired']
-    }
+    # Get product count
+    products = get_all_products()
+    product_count = len(products) if products else 0
 
-    fig1 = px.pie(
-        names=list(totals.keys()),
-        values=list(totals.values()),
-        color_discrete_sequence=px.colors.qualitative.Pastel
-    )
-    fig1.update_traces(
-        texttemplate='%{label}<br>%{value}',
-        textposition='inside',
-        hoverinfo='label+value',
-        hole=0.3,
-        textfont_size=16
-    )
-    fig1.update_layout(
-        showlegend=False,
+    # Get customer count
+    customer_count = get_customer_count()
 
-    )
-    st.plotly_chart(fig1, use_container_width=True)
+    # Only show the chart if we have some data
+    if customer_count > 0 or product_count > 0 or license_stats['active'] > 0 or license_stats['expired'] > 0:
+        # System Totals Pie Chart (Counts only)
+        totals = {
+            'Products': product_count,
+            'Customers': customer_count,
+            'Active Licenses': license_stats['active'],
+            'Expired Licenses': license_stats['expired']
+        }
+
+        fig1 = px.pie(
+            names=list(totals.keys()),
+            values=list(totals.values()),
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig1.update_traces(
+            texttemplate='%{label}<br>%{value}',
+            textposition='inside',
+            hoverinfo='label+value',
+            hole=0.3,
+            textfont_size=16
+        )
+        fig1.update_layout(showlegend=False)
+        st.plotly_chart(fig1, use_container_width=True)
+    else:
+        st.info("No data available for visualization")
 
 
 
@@ -251,25 +264,17 @@ def show_dashboard():
 
     st.title("Corporate IT Solutions Dashboard")
 
-
-
-
     # Get data
+    total_customers = get_customer_count()  # This now returns an int
+    license_stats = get_license_stats()  # This now returns dict with int values
 
-    total_customers = int(get_customer_count())
-
-    license_stats_raw = get_license_stats()
-    license_stats = {
-        'active': int(license_stats_raw['active']),
-        'expired': int(license_stats_raw['expired']),
-    }
     with st.expander("📊 License Metrics", expanded=True):
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.metric(
                 label="Total Customers",
-                value=total_customers,
+                value=str(total_customers),  # Convert to string to be safe
                 delta="View all customers",
                 help="Total number of customers"
             )
@@ -277,7 +282,7 @@ def show_dashboard():
         with col2:
             st.metric(
                 label="Active Licenses",
-                value=license_stats['active'],
+                value=str(license_stats['active']),
                 delta="See details",
                 help="Licenses currently in use"
             )
@@ -285,21 +290,25 @@ def show_dashboard():
         with col3:
             st.metric(
                 label="Expired Licenses",
-                value=license_stats['expired'],
+                value=str(license_stats['expired']),
                 delta="Needs attention",
                 delta_color="inverse",
                 help="Licenses requiring renewal"
             )
 
+    # Rest of your dashboard code...
 
     # ===== LICENSE STATUS VISUALIZATION =====
     col1, col2 = st.columns([6,2])
 
     with col1:
-        show_license_renewal_section()
+        licenses = get_expiring_licenses()
+        if not licenses['expired'] and not licenses['expiring_soon']:
+            st.info("No data uploaded - no license renewal information available")
+        else:
+            show_license_renewal_section()
 
     with col2:
-
         show_pie_charts()
 
 

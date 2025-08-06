@@ -238,13 +238,18 @@ def get_license_stats():
     if conn:
         try:
             query = """
-                    SELECT SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END) as active, \
-                           SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END)  as expired
-                    FROM licenses \
+                    SELECT 
+                        COALESCE(SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END), 0) as active, 
+                        COALESCE(SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END), 0) as expired
+                    FROM licenses 
                     """
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query)
-            return cursor.fetchone()
+            result = cursor.fetchone()
+            return {
+                'active': int(result['active']) if result['active'] is not None else 0,
+                'expired': int(result['expired']) if result['expired'] is not None else 0
+            }
         except Error as e:
             st.error(f"Database error: {e}")
             return {'active': 0, 'expired': 0}
@@ -360,6 +365,9 @@ def show_license_entry():
                 delta_color="inverse",
                 help="Licenses requiring renewal"
             )
+
+        if total_customers == 0 and license_stats['active'] == 0 and license_stats['expired'] == 0:
+            st.info("No data uploaded - please add customers and licenses to see metrics")
 
     # Initialize session state
     if 'edit_mode' not in st.session_state:

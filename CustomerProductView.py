@@ -1,4 +1,3 @@
-# CustomerProductView.py
 import streamlit as st
 import mysql.connector
 import pandas as pd
@@ -79,7 +78,8 @@ def get_customer_count():
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM customers")
-            return cursor.fetchone()[0]
+            result = cursor.fetchone()
+            return result[0] if result else 0
         except Error as e:
             st.error(f"Database error: {e}")
             return 0
@@ -95,13 +95,18 @@ def get_license_stats():
     if conn:
         try:
             query = """
-                    SELECT SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END) as active, \
-                           SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END)  as expired
+                    SELECT 
+                        COALESCE(SUM(CASE WHEN expiry_date >= CURDATE() THEN 1 ELSE 0 END), 0) as active, \
+                        COALESCE(SUM(CASE WHEN expiry_date < CURDATE() THEN 1 ELSE 0 END), 0) as expired
                     FROM licenses \
                     """
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query)
-            return cursor.fetchone()
+            result = cursor.fetchone()
+            return {
+                'active': result.get('active', 0) if result else 0,
+                'expired': result.get('expired', 0) if result else 0
+            }
         except Error as e:
             st.error(f"Database error: {e}")
             return {'active': 0, 'expired': 0}
@@ -109,7 +114,6 @@ def get_license_stats():
             if conn.is_connected():
                 conn.close()
     return {'active': 0, 'expired': 0}
-
 
 
 def show_customer_product_view():
@@ -158,6 +162,9 @@ def show_customer_product_view():
                 delta_color="inverse",
                 help="Licenses requiring renewal"
             )
+
+        if total_customers == 0 and license_stats['active'] == 0 and license_stats['expired'] == 0:
+            st.info("No data uploaded - please add customers and licenses to see metrics")
 
     # ===== LICENSE STATUS VISUALIZATION =====
 
