@@ -1,3 +1,5 @@
+**Status:** ✅ Completed
+
 # 📦 Corporate IT Solutions – License Management System
 
 A full-stack **Python + Streamlit + MySQL** application designed to manage customers, products, software licenses, renewals, and administrative requests.  
